@@ -35,10 +35,8 @@ try:
         from ufl_legacy.finiteelement.mixedelement import VectorElement, FiniteElement
         from ufl_legacy.finiteelement.enrichedelement import NodalEnrichedElement
     from fenics import FunctionSpace
-    try:
-        from fenics_adjoint import Function
-    except:
-        from fenics import Function
+    from fenics import Function
+    from fenics_adjoint import Function
     from fenics import set_log_active    
     set_log_active(False)
 
