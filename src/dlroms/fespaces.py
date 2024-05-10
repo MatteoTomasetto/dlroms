@@ -35,7 +35,10 @@ try:
         from ufl_legacy.finiteelement.mixedelement import VectorElement, FiniteElement
         from ufl_legacy.finiteelement.enrichedelement import NodalEnrichedElement
     from fenics import FunctionSpace
-    from fenics import Function
+    try:
+        from fenics_adjoint import Function
+    except:
+        from fenics import Function
     from fenics import set_log_active    
     set_log_active(False)
 
@@ -348,21 +351,27 @@ def vtk(u, space, filename):
     os.remove("%s.pvd" % filename)
     os.rename("%s000000.vtu" % filename, "%s.vtu" % filename)
     
-def plot(obj, space = None, vmin = None, vmax = None, colorbar = False, axis = "off", shrink = 0.8, levels = 200, cmap = 'jet', spaceticks = False):
+def plot(obj, space = None, xlim = None, ylim = None, vmin = None, vmax = None, clim = None, colorbar = False, axis = "off", shrink = 0.8, scale = 2.0, cmap = None, minlength = 1, levelcurves = False, colorbarticks = False, format = None):
     """Plots mesh and functional objects.
-    
+
     Input
-        obj         (dolfin.cpp.mesh.Mesh, numpy.ndarray or torch.Tensor)   Object to be plotted. It should be either a mesh
-                                                                            or an array containing the values of some function
-                                                                            at the degrees of freedom.
-        space       (dolfin.function.functionspace.FunctionSpace)           Functional space where 'obj' belongs (assuming 'obj' is not a mesh).
+        obj           (dolfin.cpp.mesh.Mesh, numpy.ndarray or torch.Tensor) Object to be plotted. It should be either a mesh or an array containing the values of some function at the degrees of freedom.
+        space         (dolfin.function.functionspace.FunctionSpace)         Functional space where 'obj' belongs (assuming 'obj' is not a mesh).
                                                                             Defaults to None, in which case 'obj' is assumed to be a mesh.
-        vmin        (float)                                                 If a colorbar is added, then the color legend is calibrated in such a way that vmin
-                                                                            is considered the smallest value. Ignored if space = None.
-        vmax        (float)                                                 Analogous to vmin.
-        colorbar    (bool)                                                  Whether to add or not a colorbar. Ignored if len(*args)=1.
-        axis        (obj)                                                   Axis specifics (cf. matplotlib.pyplot.axis). Defaults to "off", thus hiding the axis.
-        shrink      (float)                                                 Shrinks the colorbar by the specified factor (defaults to 0.8). Ignored if colorbar = False.
+        xlim          (float, float)                                        Tuple with limits on the x-axis
+        ylim          (float, float)                                        Tuple with limits on the y-axis
+        vmin          (float)                                               If a colorbar is added, then the color legend is calibrated in such a way that vmin is considered the smallest value. Ignored if space = None.
+        vmax          (float)                                               Analogous to vmin.
+        clim          (float, float)                                        Tuple with (vmin, vmax) used for plot with vectors
+        colorbar      (bool)                                                Whether to add or not a colorbar. Ignored if len(*args)=1.
+        axis          (obj)                                                 Axis specifics (cf. matplotlib.pyplot.axis). Defaults to "off", thus hiding the axis.
+        shrink        (float)                                               Shrinks the colorbar by the specified factor (defaults to 0.8). Ignored if colorbar = False.
+        scale         (float)                                               Scale the vectors dimension when plotting vector-valued objects (defaults to 2.0)
+        cmap          (string)                                              Set the color map
+        minlength     (float)                                               Set the minimum vectors length when plotting vector-valued objects (defaults to 1.0)
+        levelcurves   (bool)                                                Whether to add or not level curves
+        colorbarticks (bool)                                                Whether to add or not colorbar ticks
+        format        (string)                                              Set a format for the colorbar
     """
     try:
         if(space == None):
@@ -370,18 +379,24 @@ def plot(obj, space = None, vmin = None, vmax = None, colorbar = False, axis = "
         else:
             uv = asvector(obj, space)
             if(space.element().value_dimension(0) == 1):
-                try:
-                    c = dolfin.common.plotting.plot(uv, vmin = vmin, vmax = vmax, levels = numpy.linspace(float(obj.min()), float(obj.max()), levels), cmap = cmap)
-                except:
+                if(not colorbarticks):
+                    c_dummy = dolfin.common.plotting.plot(uv, vmin = vmin, vmax = vmax, cmap = cmap, mode = "color")
+                if(levelcurves):
                     c = dolfin.common.plotting.plot(uv, vmin = vmin, vmax = vmax, cmap = cmap)
+                else:
+                    c = dolfin.common.plotting.plot(uv, vmin = vmin, vmax = vmax, cmap = cmap, mode = "color")
             else:
-                c = dolfin.common.plotting.plot(uv, cmap = cmap)
+                c = dolfin.common.plotting.plot(uv, scale = scale, cmap = cmap, clim = clim, minlength = minlength)
+                c_dummy = c
             if(colorbar):
-                cbar = plt.colorbar(c, shrink = shrink)
-                if(spaceticks):
-                    cbar.set_ticks([round(tick, 2) for tick in numpy.linspace(cbar.vmin, cbar.vmax, 6)])
+                if(not colorbarticks):
+                    plt.colorbar(c_dummy, shrink = shrink, format = format)
+                else:
+                    plt.colorbar(c, shrink = shrink, format = format)
     except:
         raise RuntimeError("First argument should be either a dolfin.cpp.mesh.Mesh or a structure containing the dof values of some function (in which case 'space' must be != None).")
+    plt.xlim(xlim)
+    plt.ylim(ylim)
     plt.axis(axis)
 
 def multiplot(vs, shape, space, size = 4, **kwargs):
@@ -390,28 +405,31 @@ def multiplot(vs, shape, space, size = 4, **kwargs):
         plt.subplot(shape[0], shape[1], j+1)
         plot(vs[j], space, **kwargs)
     
-def gif(name, U, space, dt = None, T = None, axis = "off", figsize = (4,4), colorbar = False, cmap = 'jet'):
+def gif(name, U, dt, T, space, axis = "off", figsize = (4,4), colorbar = False, scale = 2.0, levelcurves = False, cmap = None):
     """Builds a GIF animation given the values of a functional object at multiple time steps.
-    
+
     Input
-        name    (str)                                               Path where to save the GIF file.
-        U       (numpy.ndarray or torch.Tensor)                     Array of shape (N,n). Each U[j] should contain the
-                                                                    values of a functional object at its degrees of freedom.
-        dt      (float)                                             Time step with each frame.
-        T       (float)                                             Final time. The GIF will have int(T/dt) frames
-        space   (dolfin.function.functionspace.FunctionSpace).      Functional space where the U[i]'s belong.
-        axis    (obj)                                               Axis specifics (cf. matplotlib.pyplot.axis). Defaults to "off", thus hiding the axis.
-        figsize (tuple)                                             Sizes of the window where to plot, width = figsize[0], height = figsize[1].
+        name        (str)                                           Path where to save the GIF file.
+        U           (numpy.ndarray or torch.Tensor)                 Array of shape (N,n). Each U[j] should contain the values of a functional object at its degrees of freedom.
+        dt          (float)                                         Time step with each frame.
+        T           (float)                                         Final time. The GIF will have int(T/dt) frames
+        space       (dolfin.function.functionspace.FunctionSpace)   Functional space where the U[i]'s belong.
+        axis        (obj)                                           Axis specifics (cf. matplotlib.pyplot.axis). Defaults to "off", thus hiding the axis.
+        figsize     (tuple)                                         Sizes of the window where to plot, width = figsize[0], height = figsize[1].
                                                                     See matplotlib.pyplot.plot.
+        colorbar    (bool)                                          Whether to add or not a colorbar.
+        scale       (float)                                         Scale the vectors dimension when plotting vector-valued objects (defaults to 2.0)
+        levelcurves (bool)                                          Whether to add or not level curves
+        cmap        (string)                                        Set the color map
     """
-    frames = len(U) if(T is None) else int(T/dt)
+    frames = int(T/dt)
     N = len(U)
     step = N//frames
-    vmin = float(U.min())
-    vmax = float(U.max())
+    vmin = U.min()
+    vmax = U.max()
     def drawframe(i):
         plt.figure(figsize = figsize)
-        plot(U[i*step], space, axis = axis, vmin = vmin, vmax = vmax, colorbar = colorbar, cmap = cmap)
+        plot(U[i*step], space, axis = axis, vmin = vmin, vmax = vmax, colorbar = colorbar, scale = scale, levelcurves = levelcurves, cmap = cmap)
     gifs.save(drawframe, frames, name)
    
 def animate(U, space, **kwargs):
