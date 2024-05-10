@@ -1,6 +1,5 @@
 # DLROMs: a Python package for Deep Learning based Reduced Order Models
 
-
 **DLROMs** is a deep learning library for model order reduction that leverages on packages such as Pytorch and FEniCS. It comes with a basic version (no FEniCS required) and an advanced one. The techniques made available within this library are reminiscent of the following scientific articles: 
 
 - [A deep learning approach to reduced order modelling of parameter dependent partial differential equations](https://doi.org/10.1090/mcom/3781), Franco et al., *Mathematics of Computation*, 92 (340), 483-524 (2023).
@@ -85,7 +84,7 @@ The whole library is documented using native Python syntax, and it can be inspec
 ### Basic version
 The basic version of the DLROMs package allows users to create and train sophisticated neural network models, while also granting access to classical ROM techniques such as Principal Orthogonal Decomposition (POD). This version can be easily installed on Linux, Windows and MacOS. To do so, simply run
 
-    pip install git+https://github.com/NicolaRFranco/dlroms.git
+    pip install git+https://github.com/MatteoTomasetto/dlroms.git
 
 This will automatically install all the packages required for the basic version (numpy, torch, etc.). </br>
 Note: if you are using **conda**, make sure that **pip** is available. If not, you can easily install it via
@@ -101,7 +100,7 @@ The advanced version of the dlroms package is also available on Google Colab. To
     try:
          from dlroms import*
     except:
-         !pip install git+https://github.com/NicolaRFranco/dlroms.git
+         !pip install git+https://github.com/MatteoTomasetto/dlroms.git
          from dlroms import*
     
 The pip instruction will install the basic version, while the importation of the dlrom package will automatically trigger the complementary installation of FEniCS and gmsh. At the same time, this syntax will avoid redundant installations if the kernel is restarted.
