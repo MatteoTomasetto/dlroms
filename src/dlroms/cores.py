@@ -67,9 +67,9 @@ class Core(object):
             (torch.Tensor).
         """
         return tzeros(*shape, dtype = self.dtype, device = self.device)
-        
+     
      def ones(self, *shape):
-        """Returns a tensor with all entries equal to ones.
+     	"""Returns a tensor with all entries equal to ones.
         
         Input
             *shape  (tuple of ints)     Shape of the tensor. E.g., self.ones(2,3) creates a 2x3 tensor full of ones.
@@ -78,7 +78,7 @@ class Core(object):
             (torch.Tensor).
         """
         return tones(*shape, dtype = self.dtype, device = self.device)
-            
+        
     def load(self, *paths):
         """Loads a list of arrays into a single tensor.
         
