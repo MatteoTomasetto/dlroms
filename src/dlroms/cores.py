@@ -69,10 +69,10 @@ class Core(object):
         return tzeros(*shape, dtype = self.dtype, device = self.device)
         
      def ones(self, *shape):
-        """Returns a tensor with all entries equal to zero.
+        """Returns a tensor with all entries equal to ones.
         
         Input
-            *shape  (tuple of ints)     Shape of the tensor. E.g., self.zeros(2,3) creates a 2x3 tensor full of zeros.
+            *shape  (tuple of ints)     Shape of the tensor. E.g., self.ones(2,3) creates a 2x3 tensor full of ones.
             
         Output
             (torch.Tensor).
