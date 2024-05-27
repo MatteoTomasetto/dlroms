@@ -68,7 +68,7 @@ class Core(object):
         """
         return tzeros(*shape, dtype = self.dtype, device = self.device)
     
-    def ones(self. *shape):
+    def ones(self, *shape):
         """Returns a tensor with all entries equal to ones.
         
         Input
