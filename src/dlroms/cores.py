@@ -22,7 +22,7 @@
 
 from numpy import load as npload
 from numpy.random import rand as nprand, randn as nprandn
-from torch import device as dev, Tensor, cat, zeros as tzeros, ones as tones, float as tfloat, tensor as ttensor
+from torch import device as dev, Tensor, cat, zeros as tzeros, float as tfloat, tensor as ttensor
 
 class Core(object):
     """Class for managing CPU and GPU Pytorch tensors. Objects of this class have the following attributes.
@@ -67,17 +67,6 @@ class Core(object):
             (torch.Tensor).
         """
         return tzeros(*shape, dtype = self.dtype, device = self.device)
-    
-    def ones(self, *shape):
-        """Returns a tensor with all entries equal to ones.
-        
-        Input
-            *shape  (tuple of ints)     Shape of the tensor. E.g., self.ones(2,3) creates a 2x3 tensor full of ones.
-            
-        Output
-            (torch.Tensor).
-        """
-        return tones(*shape, dtype = self.dtype, devide = self.device)
 
     def load(self, *paths):
         """Loads a list of arrays into a single tensor.
