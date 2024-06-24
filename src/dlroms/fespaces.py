@@ -33,9 +33,9 @@ try:
     from ufl_legacy.finiteelement.enrichedelement import NodalEnrichedElement
     from fenics import FunctionSpace
     try:
-    	from fenics_adjoint import Function
+        from fenics_adjoint import Function
     except:
-    	from fenics import Function
+        from fenics import Function
     from fenics import set_log_active    
     set_log_active(False)
 
@@ -109,7 +109,7 @@ def coordinates(space):
     """
     return space.tabulate_dof_coordinates().astype("float32")
 
-def boundary(mesh = None, V = None):
+def boundary(mesh = None, V = None, subdomain = "on_boundary"):
     """Returns the indexes of those nodes that lie on the boundary of a given domain.
     
     Input
@@ -118,10 +118,10 @@ def boundary(mesh = None, V = None):
     Output
         (numpy.ndarray). Ex: calling mesh.coordinates()[boundary(mesh)] returns the coordinates of the nodes along the boundary.
     """
-    space = V if(not (V is None)) else dolfin.function.functionspace.FunctionSpace(mesh, 'CG', 1)
-    indexes = list(dolfin.fem.dirichletbc.DirichletBC(space, 0.0, lambda x,y:y).get_boundary_values().keys())
+    space = V if(not (V is None)) else dolfin.function.functionspace.FunctionSpace(mesh, 'CG', 1)    
+    indexes = list(dolfin.fem.dirichletbc.DirichletBC(space, 0.0, subdomain).get_boundary_values().keys())
     return indexes if(not (V is None)) else dolfin.cpp.fem.dof_to_vertex_map(space)[indexes]
-    
+
 def closest(mesh, x):
     """Given a mesh and a point, returns the closest mesh vertix to that point.
     
