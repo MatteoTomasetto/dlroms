@@ -22,9 +22,44 @@
 
 import numpy as np
 import torch
+from math import sqrt
+from dolfin import assemble, inner, dx
+from dlroms.fespaces import asvector
 from dlroms.cores import CPU, GPU
 from dlroms.dnns import Clock
 from IPython.display import clear_output
+
+def l2_norms(snapshots, space, core = GPU):
+    l2_norms = core.zeros(snapshots.shape[0])
+    try:
+        space = space.sub(0).collapse()
+    except:
+        space = space
+    for i in range(snapshots.shape[0]):
+        snapshot = asvector(snapshots[i], space)
+        l2_norms[i] = sqrt(assemble(inner(snapshot, snapshot) * dx))
+    return l2_norms
+
+def l2_mse(true, pred, space, core = GPU):
+    return (l2_norms(true - pred, space, core)).mean()
+
+def l2_mre(true, pred, space, core = GPU):
+    return (l2_norms(true - pred, space, core) / l2_norms(true, space, core)).mean()
+
+def l2_vect_mse(true_x, pred_x, true_y, pred_y, space, core = GPU):
+    return ((l2_norms(true_x - pred_x, space, core)).pow(2) + (l2_norms(true_y - pred_y, space, core)).pow(2)).sqrt().mean()
+
+def l2_vect_mre(true_x, pred_x, true_y, pred_y, space, core = GPU):
+    return ((((l2_norms(true_x - pred_x, space, core)).pow(2) + (l2_norms(true_y - pred_y, space, core)).pow(2)).sqrt()) / (((l2_norms(true_x, space, core)).pow(2) + (l2_norms(true_y, space, core)).pow(2)).sqrt())).mean()
+
+def linf(x):
+    return x.abs().max(axis = -1)[0]
+
+def linf_mse(true, pred):
+    return (linf(true - pred)).mean()
+
+def linf_mre(true, pred):
+    return (linf(true - pred) / linf(true)).mean()
 
 def snapshots(n, sampler, core = GPU, verbose = False, filename = None):
     """Samples a collection of snapshots for a given OCP solver."""
