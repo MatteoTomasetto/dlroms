@@ -119,7 +119,7 @@ def boundary(mesh = None, V = None, subdomain = "on_boundary"):
         (numpy.ndarray). Ex: calling mesh.coordinates()[boundary(mesh)] returns the coordinates of the nodes along the boundary.
     """
     space = V if(not (V is None)) else dolfin.function.functionspace.FunctionSpace(mesh, 'CG', 1)    
-    indexes = list(dolfin.fem.dirichletbc.DirichletBC(space, 0.0, subdomain).get_boundary_values().keys())
+    indexes = list(dolfin.fem.dirichletbc.DirichletBC(space, Function(space), subdomain).get_boundary_values().keys())
     return indexes if(not (V is None)) else dolfin.cpp.fem.dof_to_vertex_map(space)[indexes]
 
 def closest(mesh, x):
