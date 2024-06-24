@@ -396,16 +396,22 @@ def plot(obj, space = None, xlim = None, ylim = None, vmin = None, vmax = None, 
     plt.ylim(ylim)
     plt.axis(axis)
 
-def multiplot(vs, shape, space, size = 4, **kwargs):
+def multiplot(vs, shape, spaces, size = 4, titles = "", **kwargs):
     plt.figure(figsize = (shape[1]*size, shape[0]*size))
     try:
-        len(space)
+        len(spaces)
     except:
-        space = [space] * len(vs)
+        spaces = [spaces] * len(vs)
+
+    try:
+        len(titles)
+    except:
+        titles = [titles] * len(vs)
 
     for j in range(len(vs)):
         plt.subplot(shape[0], shape[1], j+1)
-        plot(vs[j], space[j], **kwargs)
+        plot(vs[j], spaces[j], **kwargs)
+        plt.title(titles[j])
     
 def gif(name, U, dt, T, space, axis = "off", figsize = (4,4), colorbar = False, scale = 2.0, levelcurves = False, cmap = None):
     """Builds a GIF animation given the values of a functional object at multiple time steps.
