@@ -399,12 +399,12 @@ def plot(obj, space = None, xlim = None, ylim = None, vmin = None, vmax = None, 
 def multiplot(vs, shape, spaces, size = 4, titles = "", **kwargs):
     plt.figure(figsize = (shape[1]*size, shape[0]*size))
     try:
-        len(spaces)
+        spaces[0]
     except:
         spaces = [spaces] * len(vs)
 
     try:
-        len(titles)
+        titles[0]
     except:
         titles = [titles] * len(vs)
 
@@ -413,7 +413,7 @@ def multiplot(vs, shape, spaces, size = 4, titles = "", **kwargs):
         plot(vs[j], spaces[j], **kwargs)
         plt.title(titles[j])
     
-def gif(name, U, dt, T, space, axis = "off", figsize = (4,4), colorbar = False, scale = 2.0, levelcurves = False, cmap = None):
+def gif(name, U, space, dt = None, T = None, axis = "off", figsize = (4,4), colorbar = False, scale = 2.0, levelcurves = False, cmap = None):
     """Builds a GIF animation given the values of a functional object at multiple time steps.
 
     Input
@@ -430,16 +430,16 @@ def gif(name, U, dt, T, space, axis = "off", figsize = (4,4), colorbar = False, 
         levelcurves (bool)                                          Whether to add or not level curves
         cmap        (string)                                        Set the color map
     """
-    frames = int(T/dt)
+    frames = len(U) if(T is None) else int(T/dt)
     N = len(U)
     step = N//frames
-    vmin = U.min()
-    vmax = U.max()
+    vmin = float(U.min())
+    vmax = float(U.max())
     def drawframe(i):
         plt.figure(figsize = figsize)
         plot(U[i*step], space, axis = axis, vmin = vmin, vmax = vmax, colorbar = colorbar, scale = scale, levelcurves = levelcurves, cmap = cmap)
     gifs.save(drawframe, frames, name)
-   
+
 def animate(U, space, **kwargs):
     rnd = numpy.random.randint(50000)
     gif("temp%d-gif" % rnd, U, space, **kwargs)
