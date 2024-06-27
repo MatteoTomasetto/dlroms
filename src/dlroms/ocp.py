@@ -28,38 +28,68 @@ from dlroms.fespaces import asvector
 from dlroms.cores import CPU, GPU
 from dlroms.dnns import Clock
 from IPython.display import clear_output
+from ufl_legacy.measure import Measure
 
-def l2_norms(snapshots, space, core = GPU):
-    l2_norms = core.zeros(snapshots.shape[0])
-    try:
-        space = space.sub(0).collapse()
-    except:
-        space = space
-    for i in range(snapshots.shape[0]):
-        snapshot = asvector(snapshots[i], space)
-        l2_norms[i] = sqrt(assemble(inner(snapshot, snapshot) * dx))
-    return l2_norms
+class Norm():
+    def __init__(self, mesh, space, measure = None, core = GPU):
+        self.space = space
+        self.measure = Measure("dx", domain = mesh) if(measure is None) else measure
+        self.core = core
+    
+    def norms(self, snapshots):
+        raise RuntimeError("No norms method specified!")
 
-def l2_mse(true, pred, space, core = GPU):
-    return (l2_norms(true - pred, space, core)).mean()
+    def mse(self, true, pred):
+        return (self.norms(true - pred)).mean()
 
-def l2_mre(true, pred, space, core = GPU):
-    return (l2_norms(true - pred, space, core) / l2_norms(true, space, core)).mean()
+    def mre(self, true, pred):
+        return (self.norms(true - pred) / self.norms(true)).mean()
+    
+    def mse_vect(self, true_x, pred_x, true_y, pred_y):
+        return ((self.norms(true_x - pred_x)).pow(2) + (self.norms(true_y - pred_y)).pow(2)).sqrt().mean()
 
-def l2_vect_mse(true_x, pred_x, true_y, pred_y, space, core = GPU):
-    return ((l2_norms(true_x - pred_x, space, core)).pow(2) + (l2_norms(true_y - pred_y, space, core)).pow(2)).sqrt().mean()
+    def mre_vect(self, true_x, pred_x, true_y, pred_y):
+        return ((((self.norms(true_x - pred_x)).pow(2) + (self.norms(true_y - pred_y)).pow(2)).sqrt()) / (((self.norms(true_x)).pow(2) + (self.norms(true_y)).pow(2)).sqrt())).mean()
 
-def l2_vect_mre(true_x, pred_x, true_y, pred_y, space, core = GPU):
-    return ((((l2_norms(true_x - pred_x, space, core)).pow(2) + (l2_norms(true_y - pred_y, space, core)).pow(2)).sqrt()) / (((l2_norms(true_x, space, core)).pow(2) + (l2_norms(true_y, space, core)).pow(2)).sqrt())).mean()
+class L2(Norm):
+    def __init__(self, mesh, space, measure = None, core = GPU):
+        super(L2, self).__init__(mesh, space, measure, core)
+    
+    def norms(self, snapshots):
+        norms = (self.core).zeros(snapshots.shape[0])
+        try:
+            space = (self.space).sub(0).collapse()
+        except:
+            space = (self.space)
+        for i in range(snapshots.shape[0]):
+            snapshot = asvector(snapshots[i], space)
+            norms[i] = sqrt(assemble(inner(snapshot, snapshot) * self.measure))
+        return norms
 
-def linf(x):
-    return x.abs().max(axis = -1)[0]
+class H10(Norm):
+    def __init__(self, mesh, space, measure = None, core = GPU):
+        super(L2, self).__init__(mesh, space, measure, core)
+    
+    def norms(self, snapshots):
+        norms = (self.core).zeros(snapshots.shape[0])
+        try:
+            space = (self.space).sub(0).collapse()
+        except:
+            space = (self.space)
+        for i in range(snapshots.shape[0]):
+            snapshot = asvector(snapshots[i], space)
+            norms[i] = sqrt(assemble(inner(grad(snapshot), grad(snapshot)) * self.measure))
+        return norms
 
-def linf_mse(true, pred):
-    return (linf(true - pred)).mean()
+class Linf():   
+    def norms(self, snapshots):
+        return snapshots.abs().max(axis = -1)[0]
 
-def linf_mre(true, pred):
-    return (linf(true - pred) / linf(true)).mean()
+    def mse(self, true, pred):
+        return (self.norms(true - pred)).mean()
+
+    def mre(self, true, pred):
+        return (self.norms(true - pred) / self.norms(true)).mean()
 
 def snapshots(n, sampler, core = GPU, verbose = False, filename = None):
     """Samples a collection of snapshots for a given OCP solver."""
