@@ -23,12 +23,11 @@
 import numpy as np
 import torch
 from math import sqrt
-from dolfin import assemble, inner, dx
+from dolfin import Measure, assemble, inner, grad
 from dlroms.fespaces import asvector
 from dlroms.cores import CPU, GPU
 from dlroms.dnns import Clock
 from IPython.display import clear_output
-from ufl_legacy.measure import Measure
 
 class Norm():
     def __init__(self, mesh, space, measure = None, core = GPU):
