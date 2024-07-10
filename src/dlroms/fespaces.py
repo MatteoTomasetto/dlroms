@@ -413,7 +413,7 @@ def multiplot(vs, shape, spaces, size = 4, titles = "", **kwargs):
         plot(vs[j], spaces[j], **kwargs)
         plt.title(titles[j])
     
-def gif(name, U, space, dt = None, T = None, axis = "off", figsize = (4,4), colorbar = False, scale = 2.0, levelcurves = False, cmap = None):
+def gif(name, U, space, dt = 1.0/24.0, T = None, axis = "off", figsize = (4,4), colorbar = False, scale = 2.0, levelcurves = False, cmap = None):
     """Builds a GIF animation given the values of a functional object at multiple time steps.
 
     Input
@@ -438,7 +438,7 @@ def gif(name, U, space, dt = None, T = None, axis = "off", figsize = (4,4), colo
     def drawframe(i):
         plt.figure(figsize = figsize)
         plot(U[i*step], space, axis = axis, vmin = vmin, vmax = vmax, colorbar = colorbar, scale = scale, levelcurves = levelcurves, cmap = cmap)
-    gifs.save(drawframe, frames, name)
+    gifs.save(drawframe, frames, name, dt)
 
 def animate(U, space, **kwargs):
     rnd = numpy.random.randint(50000)
