@@ -22,11 +22,14 @@
 
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 from math import sqrt
 from dolfin import Measure, assemble, inner, grad
 from dlroms.fespaces import asvector
 from dlroms.cores import CPU, GPU
-from dlroms.dnns import Clock
+from dlroms.dnns import Clock, train
+from dlroms.roms import projectup, projectdown
+from dlroms.roms import POD as PODcore
 from IPython.display import clear_output
 
 class Norm():
@@ -116,26 +119,18 @@ def snapshots(n, sampler, core = GPU, verbose = False, filename = None):
     else:
         np.savez("%s.npz" % filename.replace(".npz",""), mu = mu, y = y, u = u, time = clock.elapsed())
 
-from dlroms.dnns import train # Neural networks handling
-from dlroms.roms import num2p, POD, projectup, projectdown # Proper orthogonal decomposition
-import matplotlib.pyplot as plt
-
 class OCP():
-    def __init__(self, Y, U, MU, ntrain):
-        self.Y = Y
-        self.U = U
-        self.MU = MU
+    def __init__(self, ntrain):
         self.ntrain = ntrain
 
-    def POD(self, which, k, decay = True, color = "black"):
-        S = self.Y if(which == "state") else self.U
-        pod, eig = POD(S[:self.ntrain], k = k)
+    def POD(self, S, k, decay = True, color = "black"):
+
+        pod, eig = PODcore(S[:self.ntrain], k = k)
         
         if decay:
             plt.plot([i for i in range(1, k + 1)], eig, color = color, marker = 's', markersize = 5, linewidth = 1)
             plt.ticklabel_format(axis = 'y', style = 'sci', scilimits = (0,0))
             plt.scatter(k, eig[k-1], color = color, marker = 's', facecolors = 'none', linestyle = '--', s = 100)
-            plt.ylabel("${\sigma_{\mathrm{i}}}^{y}$", fontsize=15) if(which == "state") else plt.ylabel("${\sigma_{\mathrm{i}}}^{u}$", fontsize=15)
             plt.title("Singular values decay");
         
         S_POD = projectdown(pod, S).squeeze(-1)
@@ -143,9 +138,7 @@ class OCP():
 
         return S_POD, S_reconstructed, pod, eig
 
-    def AE(self, which, encoder, decoder, S = None, training = True, save = True, path = 'autoencoder.pt',  *args, **kwargs):
-        if S is None:
-            S = self.Y if(which == "state") else self.U
+    def AE(self, S, encoder, decoder, training = True, save = True, path = 'autoencoder.pt',  *args, **kwargs):
 
         autoencoder = encoder + decoder
         
@@ -165,41 +158,52 @@ class OCP():
 
         return S_AE, S_reconstructed
 
-    def PODAE(self, which, k, encoder, decoder, training = True, save = True, path = 'autoencoder.pt',  *args, **kwargs):
+    def PODAE(self, S, k, encoder, decoder, training = True, save = True, path = 'autoencoder.pt', decay = True, color = "black", *args, **kwargs):
         
-        S_POD, S_reconstructed_POD, pod, eig = self.POD(which, k, decay = False)
-        S_DLROM, S_reconstructed_DLROM = self.AE(which, encoder, decoder, S_POD, training, save, path,  *args, **kwargs)
+        S_POD, S_reconstructed_POD, pod, eig = self.POD(S, k, decay, color)
+        S_DLROM, S_reconstructed_DLROM = self.AE(S_POD, encoder, decoder, training, save, path,  *args, **kwargs)
         S_reconstructed = projectup(pod, decoder(S_DLROM))
 
         return S_DLROM, S_reconstructed, pod, eig
 
 
-    def redmap(self, phi, Qred, Ured, minmax = False, training = True, save = True, path = 'phi.pt', *args, **kwargs):
+    def redmap(self, phi, MU, OUT = None, minmax = False, load = False, training = True, save = True, path = 'phi.pt', *args, **kwargs):
 
-        if minmax:
-            Qred_std = (Qred - Qred.min()) / (Qred.max() - Qred.min())
-            Ured_std = (Ured - Ured.min()) / (Ured.max() - Ured.min())
-            QUred = torch.cat((Qred_std, Ured_std), 1)
+        if OUT is None:
+            if minmax or training:
+                raise RuntimeError("Output data required if minmax or training are True!")
         else:
-            QUred = torch.cat((Qred, Ured), 1)
+            lengths = [OUT[i].shape[1] for i in range(len(OUT))]
+            intervals = np.insert(np.cumsum(lengths), 0, 0)
+            OUT_std = []
+            minval = []
+            maxval = []
+
+            for i in range(len(OUT)):
+                minval.append(OUT[i].min() if minmax else 0)
+                maxval.append(OUT[i].max() if minmax else 1)
+                OUT_std.append((OUT[i] - minval[i]) / (maxval[i] - minval[i])) 
         
-        if training:
-            phi.He() # NN initialization
-            train(phi, self.MU, QUred, self.ntrain, *args, **kwargs)
-        else:
+            OUT_std = torch.cat(OUT_std, 1)
+
+            if training:
+                phi.He() # NN initialization
+                train(phi, MU, OUT_std, self.ntrain, *args, **kwargs)
+        
+        if load:
             phi.load_state_dict(torch.load(path))
             phi.eval()
-        
+               
         phi.freeze()
-        QUred_hat = phi(self.MU)
-        if minmax:
-            Qred_hat = QUred_hat[:,:Qred.shape[1]] * (Qred.max() - Qred.min()) + Qred.min()
-            Ured_hat = QUred_hat[:,Qred.shape[1]:] * (Ured.max() - Ured.min()) + Ured.min()
-        else:
-            Qred_hat = QUred_hat[:,:Qred.shape[1]]
-            Ured_hat = QUred_hat[:,Qred.shape[1]:]
-
+        OUT_hat = phi(MU)
+     
         if save:
             torch.save(phi.state_dict(), path)
 
-        return Qred_hat, Ured_hat
+        OUT_hat_list = []
+
+        if OUT is not None:
+            for i in range(len(OUT)):
+                OUT_hat_list.append(OUT_hat[:, intervals[i] : intervals[i+1]] * (maxval[i] - minval[i]) + minval[i])
+
+        return OUT_hat_list
