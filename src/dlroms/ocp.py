@@ -28,7 +28,7 @@ from dolfin import Measure, assemble, inner, grad
 from dlroms.fespaces import asvector
 from dlroms.cores import CPU, GPU
 from dlroms.dnns import Clock, train
-from dlroms.roms import projectup, projectdown
+from dlroms.roms import projectup, projectdown, num2p
 from dlroms.roms import POD as PODcore
 from IPython.display import clear_output
 
