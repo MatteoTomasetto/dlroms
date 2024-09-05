@@ -207,3 +207,105 @@ class OCP():
                 OUT_hat_list.append(OUT_hat[:, intervals[i] : intervals[i+1]] * (maxval[i] - minval[i]) + minval[i])
 
         return OUT_hat_list
+        
+def train_nested(phi1, phi2, Y0, U, YU, Y1, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1, lossf = None, error = None, verbose = True, until = None, nvalid = 0, conv = num2p, best = False, cleanup = True, dropout = 0.0):
+
+    optimizer = optim(list(phi1.parameters()) + list(phi2.parameters()), lr = lr)
+
+    ntest = len(Y0)-ntrain
+    Y0train, Y0test, Y0valid = Y0[:(ntrain-nvalid)], Y0[-ntest:], Y0[(ntrain-nvalid):ntrain]
+    Utrain, Utest, Uvalid = U[:(ntrain-nvalid)], U[-ntest:], U[(ntrain-nvalid):ntrain]
+    YUtrain, YUtest, YUvalid = YU[:(ntrain-nvalid)], YU[-ntest:], YU[(ntrain-nvalid):ntrain]
+    Y1train, Y1test, Y1valid = Y1[:(ntrain-nvalid)], Y1[-ntest:], Y1[(ntrain-nvalid):ntrain]
+    
+    if(error == None):
+        def error(a, b):
+            return lossf(a, b)
+
+    err1 = []
+    err2 = []
+    clock = Clock()
+    clock.start()
+    bestv1 = np.inf
+    bestv2 = np.inf
+    tempcode = int(np.random.rand(1)*1000)
+        
+    validerr1 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, phi1(Y0valid)).item())
+    validerr2 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Y1valid, phi2(YUvalid)).item())
+
+    for e in range(epochs):
+        
+        if(dropout>0.0):
+            phi1.unfreeze()
+            phi2.unfreeze()
+            for layer in phi1:
+                if(np.random.rand()<=dropout):
+                    layer.freeze() 
+            for layer in phi2:
+                if(np.random.rand()<=dropout):
+                    layer.freeze()  
+        
+        def closure():
+            optimizer.zero_grad()
+            loss = lossf(Utrain, phi1(Y0train)) + lossf(Y1train, phi2(torch.cat((Y0train, phi1(Y0train)), 1))) #+ lossf(Y1train, phi2(YUtrain))
+            loss.backward()
+            return loss
+        
+        optimizer.step(closure)
+
+        with torch.no_grad():
+            if(phi1.l2().isnan().item() or phi2.l2().isnan().item()):
+                break
+            err1.append([error(Utrain, phi1(Y0train)).item(),
+                        error(Utest, phi1(Y0test)).item(),
+                        validerr1(),
+                       ])
+            err2.append([error(Y1train, phi2(YUtrain)).item(),
+                        error(Y1test, phi2(YUtest)).item(),
+                        validerr2(),
+                       ])
+
+            if(verbose):
+                if(cleanup):
+                        clear_output(wait = True)
+                
+                print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
+                print("Epoch "+ str(e+1) + ":\t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
+                print("Epoch "+ str(e+1) + ":\t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
+
+            if(nvalid > 0 and e > 3):
+                if((err1[-1][2] > err1[-2][2]) and (err1[-1][0] < err1[-2][0]) and (err2[-1][2] > err2[-2][2]) and (err2[-1][0] < err2[-2][0])):
+                        if((err1[-2][2] > err1[-3][2]) and (err1[-2][0] < err1[-3][0]) and (err2[-2][2] > err2[-3][2]) and (err2[-2][0] < err2[-3][0])):
+                                break
+            if(until!=None):
+                if(err1[-1][0] < until and err2[-1][0] < until):
+                        break
+
+            if(best and e > 0):
+                if(err1[-1][1] < bestv1):
+                    bestv1 = err1[-1][1] + 0.0
+                    phi1.save("tempPHI1%d" % tempcode)
+                if(err2[-1][1] < bestv2):
+                    bestv2 = err2[-1][1] + 0.0
+                    phi2.save("tempPHI2%d" % tempcode)
+            
+    if(best):
+        try:
+            phi1.load("tempPHI1%d" % tempcode) 
+            for file in phi1.files("tempPHI1%d" % tempcode):
+                os.remove(file)
+            phi2.load("tempPHI2%d" % tempcode) 
+            for file in phi2.files("tempPHI2%d" % tempcode):
+                os.remove(file)
+        except:
+            None
+    clock.stop()
+    if(verbose):
+        print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
+    if(dropout>0.0):
+        phi1.unfreeze()
+        phi2.unfreeze()
+    err1 = np.stack(err1)
+    err2 = np.stack(err2)
+    return err1, err2, clock.elapsed()
+
