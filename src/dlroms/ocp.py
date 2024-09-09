@@ -22,12 +22,13 @@
 
 import numpy as np
 import torch
+import os
 import matplotlib.pyplot as plt
 from math import sqrt
 from dolfin import Measure, assemble, inner, grad
 from dlroms.fespaces import asvector
 from dlroms.cores import CPU, GPU
-from dlroms.dnns import Clock, train
+from dlroms.dnns import Clock
 from dlroms.roms import projectup, projectdown, num2p
 from dlroms.roms import POD as PODcore
 from IPython.display import clear_output
@@ -137,7 +138,7 @@ class OCP():
         S_reconstructed = projectup(pod, S_POD)
 
         return S_POD, S_reconstructed, pod, eig
-
+    
     def AE(self, S, encoder, decoder, training = True, save = True, path = 'autoencoder.pt',  *args, **kwargs):
 
         autoencoder = encoder + decoder
@@ -207,6 +208,94 @@ class OCP():
                 OUT_hat_list.append(OUT_hat[:, intervals[i] : intervals[i+1]] * (maxval[i] - minval[i]) + minval[i])
 
         return OUT_hat_list
+
+def train(dnn, input, output, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, nvalid = 0, verbose = True, notation = '%', batchsize = None, slope = 1.0, until = None, best = False, refresh = True, dropout = 0.0):
+    
+    conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
+    optimizer = optim(dnn.parameters(), lr = lr)
+    ntest = len(input)-ntrain
+    inputtrain, outputtrain, inputtest, outputtest = input[:(ntrain-nvalid)], output[:(ntrain-nvalid)], input[-ntest:], output[-ntest:]
+    inputvalid, outputvalid = input[(ntrain-nvalid):ntrain], output[(ntrain-nvalid):ntrain]
+    
+    if(error == None):
+        def error(a, b):
+            return loss(a, b)
+
+    err = []
+    clock = Clock()
+    clock.start()
+    bestv = np.inf
+    tempcode = int(np.random.rand(1)*1000)
+        
+    validerr = (lambda : np.nan) if nvalid == 0 else (lambda : error(outputvalid, dnn(inputvalid)).item())
+
+    for e in range(epochs):
+        
+        if(dropout>0.0):
+            dnn.unfreeze()
+            for layer in dnn:
+                if(np.random.rand()<=dropout):
+                    layer.freeze()      
+        
+        if(batchsize == None):
+            def closure():
+                optimizer.zero_grad()
+                lossf = slope*loss(outputtrain, dnn(inputtrain))
+                lossf.backward()
+                return lossf
+            optimizer.step(closure)
+        else:
+            indexes = np.random.permutation(ntrain-nvalid)
+            nbatch = ntrain//batchsize
+            for j in range(nbatch):
+                inputbatch = inputtrain[indexes[(j*batchsize):((j+1)*batchsize)]]
+                outputbatch = outputtrain[indexes[(j*batchsize):((j+1)*batchsize)]]
+                def closure():
+                    optimizer.zero_grad()
+                    lossf = loss(outputbatch, dnn(inputbatch))
+                    lossf.backward()
+                    return lossf
+                optimizer.step(closure)
+
+        with torch.no_grad():
+            if(dnn.l2().isnan().item()):
+                break
+            err.append([error(outputtrain, dnn(inputtrain)).item(),
+                        error(outputtest, dnn(inputtest)).item() if ntest > 0 else np.nan,
+                        validerr(),
+                       ])
+            if(verbose):
+                if(refresh):
+                        clear_output(wait = True)
+                
+                print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
+                print("Epoch "+ str(e+1) + ":\t" + conv(err[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err[-1][2]))) + "\t" + conv(err[-1][1]) + ".")
+            if(nvalid > 0 and e > 3):
+                if((err[-1][2] > err[-2][2]) and (err[-1][0] < err[-2][0])):
+                        if((err[-2][2] > err[-3][2]) and (err[-2][0] < err[-3][0])):
+                                break
+            if(until!=None):
+                if(err[-1][0] < until):
+                        break
+            if(best and e > 0):
+                if(err[-1][1] < bestv):
+                        bestv = err[-1][1] + 0.0
+                        dnn.save("temp%d" % tempcode)
+    
+    if(best):
+        try:
+            dnn.load("temp%d" % tempcode) 
+            for file in dnn.files("temp%d" % tempcode):
+                os.remove(file)
+        except:
+            None
+    clock.stop()
+    if(verbose):
+        print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
+    if(dropout>0.0):
+        dnn.unfreeze()
+    err = np.stack(err)
+    return err, clock.elapsed()
         
 def train_nested(phi1, phi2, Y0, U, YU, Y1, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1, lossf = None, error = None, verbose = True, until = None, nvalid = 0, conv = num2p, best = False, cleanup = True, dropout = 0.0):
 
