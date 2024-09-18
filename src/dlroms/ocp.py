@@ -145,7 +145,7 @@ class OCP():
         
         if training:
             autoencoder.He() # NN initialization
-            self.train(autoencoder, S, S, self.ntrain, *args, **kwargs)
+            train(autoencoder, S, S, self.ntrain, *args, **kwargs)
         else:
             autoencoder.load_state_dict(torch.load(path))
             autoencoder.eval()
@@ -189,7 +189,7 @@ class OCP():
 
             if training:
                 phi.He() # NN initialization
-                self.train(phi, MU, OUT_std, self.ntrain, *args, **kwargs)
+                train(phi, MU, OUT_std, self.ntrain, *args, **kwargs)
         
         if load:
             phi.load_state_dict(torch.load(path))
@@ -218,7 +218,7 @@ class OCP():
             autoencoder_Y.He()
             autoencoder_U.He()
             policy.He()
-            self.train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, self.ntrain, *args, **kwargs)
+            train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, self.ntrain, *args, **kwargs)
         else:
             autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
             autoencoder_Y.eval()
