@@ -145,7 +145,7 @@ class OCP():
         
         if training:
             autoencoder.He() # NN initialization
-            train(autoencoder, S, S, self.ntrain, *args, **kwargs)
+            self.train(autoencoder, S, S, self.ntrain, *args, **kwargs)
         else:
             autoencoder.load_state_dict(torch.load(path))
             autoencoder.eval()
@@ -189,7 +189,7 @@ class OCP():
 
             if training:
                 phi.He() # NN initialization
-                train(phi, MU, OUT_std, self.ntrain, *args, **kwargs)
+                self.train(phi, MU, OUT_std, self.ntrain, *args, **kwargs)
         
         if load:
             phi.load_state_dict(torch.load(path))
@@ -208,193 +208,418 @@ class OCP():
                 OUT_hat_list.append(OUT_hat[:, intervals[i] : intervals[i+1]] * (maxval[i] - minval[i]) + minval[i])
 
         return OUT_hat_list
-
-def train(dnn, input, output, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, nvalid = 0, verbose = True, notation = '%', batchsize = None, slope = 1.0, until = None, best = False, refresh = True, dropout = 0.0):
     
-    conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
-    optimizer = optim(dnn.parameters(), lr = lr)
-    ntest = len(input)-ntrain
-    inputtrain, outputtrain, inputtest, outputtest = input[:(ntrain-nvalid)], output[:(ntrain-nvalid)], input[-ntest:], output[-ntest:]
-    inputvalid, outputvalid = input[(ntrain-nvalid):ntrain], output[(ntrain-nvalid):ntrain]
-    
-    if(error == None):
-        def error(a, b):
-            return loss(a, b)
+    def latent_policy(self, Y, U, MU, encoder_Y, decoder_Y, encoder_U, decoder_U, policy, training = True, save = True, path = 'NN/',  *args, **kwargs):
+        
+        autoencoder_Y = encoder_Y + decoder_Y
+        autoencoder_U = encoder_U + decoder_U
 
-    err = []
-    clock = Clock()
-    clock.start()
-    bestv = np.inf
-    tempcode = int(np.random.rand(1)*1000)
-        
-    validerr = (lambda : np.nan) if nvalid == 0 else (lambda : error(outputvalid, dnn(inputvalid)).item())
-
-    for e in range(epochs):
-        
-        if(dropout>0.0):
-            dnn.unfreeze()
-            for layer in dnn:
-                if(np.random.rand()<=dropout):
-                    layer.freeze()      
-        
-        if(batchsize == None):
-            def closure():
-                optimizer.zero_grad()
-                lossf = slope*loss(outputtrain, dnn(inputtrain))
-                lossf.backward()
-                return lossf
-            optimizer.step(closure)
+        if training:
+            autoencoder_Y.He()
+            autoencoder_U.He()
+            policy.He()
+            self.train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, self.ntrain, *args, **kwargs)
         else:
-            indexes = np.random.permutation(ntrain-nvalid)
-            nbatch = ntrain//batchsize
-            for j in range(nbatch):
-                inputbatch = inputtrain[indexes[(j*batchsize):((j+1)*batchsize)]]
-                outputbatch = outputtrain[indexes[(j*batchsize):((j+1)*batchsize)]]
+            autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
+            autoencoder_Y.eval()
+            autoencoder_U.load_state_dict(torch.load(path + 'autoencoder_U'))
+            autoencoder_U.eval()
+            policy.load_state_dict(torch.load(path + 'policy'))
+            policy.eval()
+        
+        autoencoder_Y.freeze()
+        autoencoder_U.freeze()
+        policy.freeze()
+
+        Y_AE = encoder_Y(Y)
+        Y_reconstructed = decoder_Y(Y_AE)
+        U_AE = encoder_U(U)
+        U_reconstructed = decoder_U(U_AE)
+        U_DLROM_hat = policy(torch.cat((MU, Y_AE),1))
+        U_hat = decoder_U(U_DLROM_hat)
+        if save:
+            torch.save(autoencoder_Y.state_dict(), path + 'autoencoder_Y')
+            torch.save(autoencoder_U.state_dict(), path + 'autoencoder_U')
+            torch.save(policy.state_dict(), path + 'policy')
+
+        return Y_AE, Y_reconstructed, U_AE, U_reconstructed, U_DLROM_hat, U_hat
+
+    def train(dnn, input, output, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, nvalid = 0, verbose = True, notation = '%', batchsize = None, slope = 1.0, until = None, best = False, refresh = True, dropout = 0.0):
+        
+        conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
+        optimizer = optim(dnn.parameters(), lr = lr)
+        ntest = len(input)-ntrain
+        inputtrain, outputtrain, inputtest, outputtest = input[:(ntrain-nvalid)], output[:(ntrain-nvalid)], input[-ntest:], output[-ntest:]
+        inputvalid, outputvalid = input[(ntrain-nvalid):ntrain], output[(ntrain-nvalid):ntrain]
+        
+        if(error == None):
+            def error(a, b):
+                return loss(a, b)
+
+        err = []
+        clock = Clock()
+        clock.start()
+        bestv = np.inf
+        tempcode = int(np.random.rand(1)*1000)
+            
+        validerr = (lambda : np.nan) if nvalid == 0 else (lambda : error(outputvalid, dnn(inputvalid)).item())
+
+        for e in range(epochs):
+            
+            if(dropout>0.0):
+                dnn.unfreeze()
+                for layer in dnn:
+                    if(np.random.rand()<=dropout):
+                        layer.freeze()      
+            
+            if(batchsize == None):
                 def closure():
                     optimizer.zero_grad()
-                    lossf = loss(outputbatch, dnn(inputbatch))
+                    lossf = slope*loss(outputtrain, dnn(inputtrain))
                     lossf.backward()
                     return lossf
                 optimizer.step(closure)
+            else:
+                indexes = np.random.permutation(ntrain-nvalid)
+                nbatch = ntrain//batchsize
+                for j in range(nbatch):
+                    inputbatch = inputtrain[indexes[(j*batchsize):((j+1)*batchsize)]]
+                    outputbatch = outputtrain[indexes[(j*batchsize):((j+1)*batchsize)]]
+                    def closure():
+                        optimizer.zero_grad()
+                        lossf = loss(outputbatch, dnn(inputbatch))
+                        lossf.backward()
+                        return lossf
+                    optimizer.step(closure)
 
-        with torch.no_grad():
-            if(dnn.l2().isnan().item()):
-                break
-            err.append([error(outputtrain, dnn(inputtrain)).item(),
-                        error(outputtest, dnn(inputtest)).item() if ntest > 0 else np.nan,
-                        validerr(),
-                       ])
-            if(verbose):
-                if(refresh):
-                        clear_output(wait = True)
-                
-                print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
-                print("Epoch "+ str(e+1) + ":\t" + conv(err[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err[-1][2]))) + "\t" + conv(err[-1][1]) + ".")
-            if(nvalid > 0 and e > 3):
-                if((err[-1][2] > err[-2][2]) and (err[-1][0] < err[-2][0])):
-                        if((err[-2][2] > err[-3][2]) and (err[-2][0] < err[-3][0])):
-                                break
-            if(until!=None):
-                if(err[-1][0] < until):
-                        break
-            if(best and e > 0):
-                if(err[-1][1] < bestv):
-                        bestv = err[-1][1] + 0.0
-                        dnn.save("temp%d" % tempcode)
-    
-    if(best):
-        try:
-            dnn.load("temp%d" % tempcode) 
-            for file in dnn.files("temp%d" % tempcode):
-                os.remove(file)
-        except:
-            None
-    clock.stop()
-    if(verbose):
-        print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
-    if(dropout>0.0):
-        dnn.unfreeze()
-    err = np.stack(err)
-    return err, clock.elapsed()
+            with torch.no_grad():
+                if(dnn.l2().isnan().item()):
+                    break
+                err.append([error(outputtrain, dnn(inputtrain)).item(),
+                            error(outputtest, dnn(inputtest)).item() if ntest > 0 else np.nan,
+                            validerr(),
+                        ])
+                if(verbose):
+                    if(refresh):
+                            clear_output(wait = True)
+                    
+                    print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
+                    print("Epoch "+ str(e+1) + ":\t" + conv(err[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err[-1][2]))) + "\t" + conv(err[-1][1]) + ".")
+                if(nvalid > 0 and e > 3):
+                    if((err[-1][2] > err[-2][2]) and (err[-1][0] < err[-2][0])):
+                            if((err[-2][2] > err[-3][2]) and (err[-2][0] < err[-3][0])):
+                                    break
+                if(until!=None):
+                    if(err[-1][0] < until):
+                            break
+                if(best and e > 0):
+                    if(err[-1][1] < bestv):
+                            bestv = err[-1][1] + 0.0
+                            dnn.save("temp%d" % tempcode)
         
-def train_nested(phi1, phi2, Y0, U, YU, Y1, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1, lossf = None, error = None, verbose = True, until = None, nvalid = 0, conv = num2p, best = False, cleanup = True, dropout = 0.0):
-
-    optimizer = optim(list(phi1.parameters()) + list(phi2.parameters()), lr = lr)
-
-    ntest = len(Y0)-ntrain
-    Y0train, Y0test, Y0valid = Y0[:(ntrain-nvalid)], Y0[-ntest:], Y0[(ntrain-nvalid):ntrain]
-    Utrain, Utest, Uvalid = U[:(ntrain-nvalid)], U[-ntest:], U[(ntrain-nvalid):ntrain]
-    YUtrain, YUtest, YUvalid = YU[:(ntrain-nvalid)], YU[-ntest:], YU[(ntrain-nvalid):ntrain]
-    Y1train, Y1test, Y1valid = Y1[:(ntrain-nvalid)], Y1[-ntest:], Y1[(ntrain-nvalid):ntrain]
-    
-    if(error == None):
-        def error(a, b):
-            return lossf(a, b)
-
-    err1 = []
-    err2 = []
-    clock = Clock()
-    clock.start()
-    bestv1 = np.inf
-    bestv2 = np.inf
-    tempcode = int(np.random.rand(1)*1000)
-        
-    validerr1 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, phi1(Y0valid)).item())
-    validerr2 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Y1valid, phi2(YUvalid)).item())
-
-    for e in range(epochs):
-        
+        if(best):
+            try:
+                dnn.load("temp%d" % tempcode) 
+                for file in dnn.files("temp%d" % tempcode):
+                    os.remove(file)
+            except:
+                None
+        clock.stop()
+        if(verbose):
+            print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
         if(dropout>0.0):
-            phi1.unfreeze()
-            phi2.unfreeze()
-            for layer in phi1:
-                if(np.random.rand()<=dropout):
-                    layer.freeze() 
-            for layer in phi2:
-                if(np.random.rand()<=dropout):
-                    layer.freeze()  
-        
-        def closure():
-            optimizer.zero_grad()
-            loss = lossf(Utrain, phi1(Y0train)) + lossf(Y1train, phi2(torch.cat((Y0train, phi1(Y0train)), 1))) #+ lossf(Y1train, phi2(YUtrain))
-            loss.backward()
-            return loss
-        
-        optimizer.step(closure)
-
-        with torch.no_grad():
-            if(phi1.l2().isnan().item() or phi2.l2().isnan().item()):
-                break
-            err1.append([error(Utrain, phi1(Y0train)).item(),
-                        error(Utest, phi1(Y0test)).item(),
-                        validerr1(),
-                       ])
-            err2.append([error(Y1train, phi2(YUtrain)).item(),
-                        error(Y1test, phi2(YUtest)).item(),
-                        validerr2(),
-                       ])
-
-            if(verbose):
-                if(cleanup):
-                        clear_output(wait = True)
-                
-                print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
-                print("Epoch "+ str(e+1) + ":\t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
-                print("Epoch "+ str(e+1) + ":\t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
-
-            if(nvalid > 0 and e > 3):
-                if((err1[-1][2] > err1[-2][2]) and (err1[-1][0] < err1[-2][0]) and (err2[-1][2] > err2[-2][2]) and (err2[-1][0] < err2[-2][0])):
-                        if((err1[-2][2] > err1[-3][2]) and (err1[-2][0] < err1[-3][0]) and (err2[-2][2] > err2[-3][2]) and (err2[-2][0] < err2[-3][0])):
-                                break
-            if(until!=None):
-                if(err1[-1][0] < until and err2[-1][0] < until):
-                        break
-
-            if(best and e > 0):
-                if(err1[-1][1] < bestv1):
-                    bestv1 = err1[-1][1] + 0.0
-                    phi1.save("tempPHI1%d" % tempcode)
-                if(err2[-1][1] < bestv2):
-                    bestv2 = err2[-1][1] + 0.0
-                    phi2.save("tempPHI2%d" % tempcode)
+            dnn.unfreeze()
+        err = np.stack(err)
+        return err, clock.elapsed()
             
-    if(best):
-        try:
-            phi1.load("tempPHI1%d" % tempcode) 
-            for file in phi1.files("tempPHI1%d" % tempcode):
-                os.remove(file)
-            phi2.load("tempPHI2%d" % tempcode) 
-            for file in phi2.files("tempPHI2%d" % tempcode):
-                os.remove(file)
-        except:
-            None
-    clock.stop()
-    if(verbose):
-        print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
-    if(dropout>0.0):
-        phi1.unfreeze()
-        phi2.unfreeze()
-    err1 = np.stack(err1)
-    err2 = np.stack(err2)
-    return err1, err2, clock.elapsed()
+    def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, ntrain, epochs, batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
 
+        conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
+
+        autoencoder_Y = encoder_Y + decoder_Y
+        autoencoder_U = encoder_U + decoder_U
+
+        optimizer = optim(list(autoencoder_Y.parameters()) + list(autoencoder_U.parameters()) + list(policy.parameters()), lr = lr)
+
+        ntest = len(Y)-ntrain
+        Ytrain, Ytest, Yvalid = Y[:(ntrain-nvalid)], Y[-ntest:], Y[(ntrain-nvalid):ntrain]
+        Utrain, Utest, Uvalid = U[:(ntrain-nvalid)], U[-ntest:], U[(ntrain-nvalid):ntrain]
+        MUtrain, MUtest, MUvalid = MU[:(ntrain-nvalid)], MU[-ntest:], MU[(ntrain-nvalid):ntrain]
+        
+        if(error == None):
+            def error(a, b):
+                return loss(a, b)
+
+        err1 = []
+        err2 = []
+        err3 = []
+        err4 = []
+        bestv1 = np.inf
+        bestv2 = np.inf
+        bestv3 = np.inf
+        bestv4 = np.inf
+        tempcode = int(np.random.rand(1)*1000)
+        clock = Clock()
+        clock.start()
+
+        validerr1 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Yvalid, autoencoder_Y(Yvalid)).item())
+        validerr2 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, autoencoder_U(Uvalid)).item())
+        validerr3 = (lambda : np.nan) if nvalid == 0 else (lambda : error(torch.cat(encoder_U(Uvalid), policy(torch.cat((MUvalid, encoder_Y(Ytrain)), 1))).item()))
+        validerr4 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, decoder_U(policy(torch.cat((MUvalid, encoder_Y(Ytrain)), 1)))).item())
+
+        for e in range(epochs):
+            
+            if(batchsize == None):
+                def closure():
+                    optimizer.zero_grad()
+                    lossf = loss(Ytrain, autoencoder_Y(Ytrain)) + \
+                    loss(Utrain, autoencoder_U(Utrain)) + \
+                    loss(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))) + \
+                    loss(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))))
+                    lossf.backward()
+                    return lossf
+                optimizer.step(closure)
+            else:
+                indexes = np.random.permutation(ntrain-nvalid)
+                nbatch = ntrain//batchsize
+                for j in range(nbatch):
+                    Ybatch = Ytrain[indexes[(j*batchsize):((j+1)*batchsize)]]
+                    Ubatch = Utrain[indexes[(j*batchsize):((j+1)*batchsize)]]
+                    MUbatch = MUtrain[indexes[(j*batchsize):((j+1)*batchsize)]]
+                    def closure():
+                        optimizer.zero_grad()
+                        lossf = loss(Ybatch, autoencoder_Y(Ybatch)) + \
+                        loss(Ubatch, autoencoder_U(Ubatch)) + \
+                        loss(encoder_U(Ubatch), policy(torch.cat((MUbatch, encoder_Y(Ybatch)), 1))) + \
+                        loss(Ubatch, decoder_U(policy(torch.cat((MUbatch, encoder_Y(Ybatch)), 1))))
+                        lossf.backward()
+                        return lossf
+                    optimizer.step(closure)  
+                    
+            with torch.no_grad():
+                if(autoencoder_Y.l2().isnan().item() or autoencoder_U.l2().isnan().item() or policy.l2().isnan().item()):
+                    break
+                err1.append([error(Ytrain, autoencoder_Y(Ytrain)).item(),
+                            error(Ytest, autoencoder_Y(Ytest)).item(),
+                            validerr1(),
+                        ])
+                err2.append([error(Utrain, autoencoder_U(Utrain)).item(),
+                            error(Utest, autoencoder_U(Utest)).item(),
+                            validerr2(),
+                        ])
+                err3.append([error(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))).item(),
+                            error(encoder_U(Utest), policy(torch.cat((MUtest, encoder_Y(Ytest)), 1))).item(),
+                            validerr3(),
+                        ])
+                err4.append([error(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1)))).item(),
+                            error(Utest, decoder_U(policy(torch.cat((MUtest, encoder_Y(Ytest)), 1)))).item(),
+                            validerr4(),
+                        ])
+            
+                if(verbose):
+                    if(refresh):
+                        clear_output(wait = True)
+
+                    print("Epoch " + str(e+1))
+                    print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
+                    print("AE_y \t\t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
+                    print("AE_U \t\t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
+                    print("Policy_N \t" + conv(err3[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err3[-1][2]))) + "\t" + conv(err3[-1][1]) + ".")
+                    print("Policy_POD \t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
+
+                if(best and e > 0):
+                    if(err1[-1][1] < bestv1 and err2[-1][1] < bestv2 and err3[-1][1] < bestv3 and err4[-1][1] < bestv4):
+                        bestv1 = err1[-1][1] + 0.0
+                        autoencoder_Y.save("temp_autoencoder_Y_%d" % tempcode)
+                        bestv2 = err2[-1][1] + 0.0
+                        autoencoder_U.save("temp_autoencoder_U_%d" % tempcode)
+                        bestv3 = err3[-1][1] + 0.0
+                        bestv4 = err4[-1][1] + 0.0
+                        policy.save("temp_policy_%d" % tempcode)
+                
+        if(best):
+            try:
+                autoencoder_Y.load("temp_autoencoder_Y_%d" % tempcode) 
+                for file in autoencoder_Y.files("temp_autoencoder_Y_%d" % tempcode):
+                    os.remove(file)
+                autoencoder_U.load("temp_autoencoder_U_%d" % tempcode) 
+                for file in autoencoder_U.files("temp_autoencoder_U_%d" % tempcode):
+                    os.remove(file)
+                policy.load("temp_policy_%d" % tempcode) 
+                for file in policy.files("temp_policy_%d" % tempcode):
+                    os.remove(file)
+            except:
+                None
+        clock.stop()
+        if(verbose):
+            print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
+
+        err1 = np.stack(err1)
+        err2 = np.stack(err2)
+        err3 = np.stack(err3)
+        err4 = np.stack(err4)
+        return err1, err2, err3, err4, clock.elapsed()
+"""
+    def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, U, MU, ntrain, epochs, batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
+
+        conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
+
+        autoencoder_Y = encoder_Y + decoder_Y
+        autoencoder_U = encoder_U + decoder_U
+
+        optimizer = optim(list(autoencoder_Y.parameters()) + list(autoencoder_U.parameters()) + list(policy.parameters()) + list(phi.parameters()), lr = lr)
+
+        ntimesteps = U.shape[1]
+        nstate = Y.shape[2]
+        ncontrol = U.shape[2]
+        nparams = MU.shape[2]
+        ntest = len(Y)-ntrain
+        Ytrain, Ytest, Yvalid = Y[:(ntrain-nvalid)].reshape(-1, nstate), Y[-ntest:].reshape(-1, nstate), Y[(ntrain-nvalid):ntrain].reshape(-1, nstate)
+        Y0train, Y0test, Y0valid = Y[:(ntrain-nvalid),:ntimesteps].reshape(-1, nstate), Y[-ntest:,:ntimesteps].reshape(-1, nstate), Y[(ntrain-nvalid):ntrain,:ntimesteps].reshape(-1, nstate)
+        Y1train, Y1test, Y1valid = Y[:(ntrain-nvalid),1:].reshape(-1, nstate), Y[-ntest:,1:].reshape(-1, nstate), Y[(ntrain-nvalid):ntrain,1:].reshape(-1, nstate)
+        Utrain, Utest, Uvalid = U[:(ntrain-nvalid)].reshape(-1, ncontrol), U[-ntest:].reshape(-1, ncontrol), U[(ntrain-nvalid):ntrain].reshape(-1, ncontrol)
+        MUtrain, MUtest, MUvalid = MU[:(ntrain-nvalid)].reshape(-1, nparams), MU[-ntest:].reshape(-1, nparams), MU[(ntrain-nvalid):ntrain].reshape(-1, nparams)
+
+        if(error == None):
+            def error(a, b):
+                return loss(a, b)
+
+        err1 = []
+        err2 = []
+        err3 = []
+        err4 = []
+        err5 = []
+        err6 = []
+        bestv1 = np.inf
+        bestv2 = np.inf
+        bestv3 = np.inf
+        bestv4 = np.inf
+        bestv5 = np.inf
+        bestv6 = np.inf
+        tempcode = int(np.random.rand(1)*1000)
+        clock = Clock()
+        clock.start()
+
+        validerr1 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Yvalid, autoencoder_Y(Yvalid)).item())
+        validerr2 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, autoencoder_U(Uvalid)).item())
+        validerr3 = (lambda : np.nan) if nvalid == 0 else (lambda : error(torch.cat(encoder_U(Uvalid), policy(torch.cat((MUvalid, encoder_Y(Y0valid)), 1))).item()))
+        validerr4 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, decoder_U(policy(torch.cat((MUvalid, encoder_Y(Y0valid)), 1)))).item())
+        validerr5 = (lambda : np.nan) if nvalid == 0 else (lambda : error(encoder_Y(Y1valid), phi(torch.cat((MUvalid, encoder_Y(Y0valid), policy(torch.cat((MUvalid, encoder_Y(Y0valid)),1))),1))).item())
+        validerr6 = (lambda : np.nan) if nvalid == 0 else (lambda : error(encoder_Y(Y1valid), phi(torch.cat((MUvalid, encoder_Y(Y0valid), encoder_U(Uvalid)), 1))).item())
+
+        for e in range(epochs):
+            
+            if(batchsize == None):
+                def closure():
+                    optimizer.zero_grad()
+                    lossf = loss(Ytrain, autoencoder_Y(Ytrain)) + \
+                    loss(Utrain, autoencoder_U(Utrain)) + \
+                    loss(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Y0train)), 1))) + \
+                    loss(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Y0train)), 1)))) + \
+                    loss(encoder_Y(Y1train), phi(torch.cat((MUtrain, encoder_Y(Y0train), policy(torch.cat((MUtrain, encoder_Y(Y0train)),1))),1))) + \
+                    loss(encoder_Y(Y1train), phi(torch.cat((MUtrain, encoder_Y(Y0train), encoder_U(Utrain)), 1)))
+                    lossf.backward()
+                    return lossf
+                optimizer.step(closure)
+            else:
+                indexes = np.random.permutation(ntrain-nvalid)
+                nbatch = ntrain//batchsize
+                for j in range(nbatch):
+                    Ybatch = Y[indexes[(j*batchsize):((j+1)*batchsize)]].reshape(-1, nstate)
+                    Y0batch = Y[indexes[(j*batchsize):((j+1)*batchsize)],:ntimesteps].reshape(-1, nstate)
+                    Y1batch = Y[indexes[(j*batchsize):((j+1)*batchsize)],1:].reshape(-1, nstate)
+                    Ubatch = U[indexes[(j*batchsize):((j+1)*batchsize)]].reshape(-1, ncontrol)
+                    MUbatch = MU[indexes[(j*batchsize):((j+1)*batchsize)]].reshape(-1, nparams)
+                    def closure():
+                        optimizer.zero_grad()
+                        lossf = loss(Ybatch, autoencoder_Y(Ybatch)) + \
+                        loss(Ubatch, autoencoder_U(Ubatch)) + \
+                        loss(encoder_U(Ubatch), policy(torch.cat((MUbatch, encoder_Y(Y0batch)), 1))) + \
+                        loss(Ubatch, decoder_U(policy(torch.cat((MUbatch, encoder_Y(Y0batch)), 1)))) + \
+                        loss(encoder_Y(Y1batch), phi(torch.cat((MUbatch, encoder_Y(Y0batch), policy(torch.cat((MUbatch, encoder_Y(Y0batch)),1))),1))) + \
+                        loss(encoder_Y(Y1batch), phi(torch.cat((MUbatch, encoder_Y(Y0batch), encoder_U(Ubatch)), 1)))
+                        lossf.backward()
+                        return lossf
+                    optimizer.step(closure)  
+                    
+            with torch.no_grad():
+                if(autoencoder_Y.l2().isnan().item() or autoencoder_U.l2().isnan().item() or policy.l2().isnan().item() or  phi.l2().isnan().item()):
+                    break
+                err1.append([error(Ytrain, autoencoder_Y(Ytrain)).item(),
+                            error(Ytest, autoencoder_Y(Ytest)).item(),
+                            validerr1(),
+                        ])
+                err2.append([error(Utrain, autoencoder_U(Utrain)).item(),
+                            error(Utest, autoencoder_U(Utest)).item(),
+                            validerr2(),
+                        ])
+                err3.append([error(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Y0train)), 1))).item(),
+                            error(encoder_U(Utest), policy(torch.cat((MUtest, encoder_Y(Y0test)), 1))).item(),
+                            validerr3(),
+                        ])
+                err4.append([error(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Y0train)), 1)))).item(),
+                            error(Utest, decoder_U(policy(torch.cat((MUtest, encoder_Y(Y0test)), 1)))).item(),
+                            validerr4(),
+                        ])
+                err5.append([error(encoder_Y(Y1train), phi(torch.cat((MUtrain, encoder_Y(Y0train), policy(torch.cat((MUtrain, encoder_Y(Y0train)),1))),1))).item(),
+                            error(encoder_Y(Y1test), phi(torch.cat((MUtest, encoder_Y(Y0test), policy(torch.cat((MUtest, encoder_Y(Y0test)),1))),1))).item(),
+                            validerr5(),
+                        ])
+                err6.append([error(encoder_Y(Y1train), phi(torch.cat((MUtrain, encoder_Y(Y0train), encoder_U(Utrain)), 1))).item(),
+                            error(encoder_Y(Y1test), phi(torch.cat((MUtest, encoder_Y(Y0test), encoder_U(Utest)), 1))).item(),
+                            validerr6(),
+                        ])
+            
+                if(verbose):
+                    if(refresh):
+                        clear_output(wait = True)
+
+                    print("Epoch " + str(e+1))
+                    print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
+                    print("AE_y \t\t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
+                    print("AE_U \t\t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
+                    print("Policy \t" + conv(err3[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err3[-1][2]))) + "\t" + conv(err3[-1][1]) + ".")
+                    print("Policy(POD) \t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
+                    print("Phi \t" + conv(err5[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err5[-1][2]))) + "\t" + conv(err5[-1][1]) + ".")
+                    print("Phi(Policy) \t" + conv(err6[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err6[-1][2]))) + "\t" + conv(err6[-1][1]) + ".")
+
+                if(best and e > 0):
+                    if(err1[-1][1] < bestv1 and err2[-1][1] < bestv2 and err3[-1][1] < bestv3 and err4[-1][1] < bestv4 and err5[-1][1] < bestv5 and err6[-1][1] < bestv6):
+                        bestv1 = err1[-1][1] + 0.0
+                        autoencoder_Y.save("temp_autoencoder_Y_%d" % tempcode)
+                        bestv2 = err2[-1][1] + 0.0
+                        autoencoder_U.save("temp_autoencoder_U_%d" % tempcode)
+                        bestv3 = err3[-1][1] + 0.0
+                        bestv4 = err4[-1][1] + 0.0
+                        policy.save("temp_policy_%d" % tempcode)
+                        bestv5 = err5[-1][1] + 0.0
+                        bestv6 = err6[-1][1] + 0.0
+                        phi.save("temp_phi_%d" % tempcode)
+                
+        if(best):
+            try:
+                autoencoder_Y.load("temp_autoencoder_Y_%d" % tempcode) 
+                for file in autoencoder_Y.files("temp_autoencoder_Y_%d" % tempcode):
+                    os.remove(file)
+                autoencoder_U.load("temp_autoencoder_U_%d" % tempcode) 
+                for file in autoencoder_U.files("temp_autoencoder_U_%d" % tempcode):
+                    os.remove(file)
+                policy.load("temp_policy_%d" % tempcode) 
+                for file in policy.files("temp_policy_%d" % tempcode):
+                    os.remove(file)
+                phi.load("temp_phi_%d" % tempcode) 
+                for file in phi.files("temp_phi_%d" % tempcode):
+                    os.remove(file)
+            except:
+                None
+        clock.stop()
+        if(verbose):
+            print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
+
+        err1 = np.stack(err1)
+        err2 = np.stack(err2)
+        err3 = np.stack(err3)
+        err4 = np.stack(err4)
+        err4 = np.stack(err5)
+        err4 = np.stack(err6)
+        return err1, err2, err3, err4, err5, err6, clock.elapsed() """
