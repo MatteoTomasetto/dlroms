@@ -139,13 +139,13 @@ class OCP():
 
         return S_POD, S_reconstructed, pod, eig
     
-    def AE(self, S, encoder, decoder, training = True, save = True, path = 'autoencoder.pt',  *args, **kwargs):
+    def AE(self, S, encoder, decoder, training = True, save = True, path = 'autoencoder.pt', epochs = 100, *args, **kwargs):
 
         autoencoder = encoder + decoder
         
         if training:
             autoencoder.He() # NN initialization
-            self.train(autoencoder, S, S, self.ntrain, *args, **kwargs)
+            self.train(autoencoder, S, S, self.ntrain, epochs, *args, **kwargs)
         else:
             autoencoder.load_state_dict(torch.load(path))
             autoencoder.eval()
@@ -168,7 +168,7 @@ class OCP():
         return S_DLROM, S_reconstructed, pod, eig
 
 
-    def redmap(self, phi, MU, OUT = None, minmax = False, load = False, training = True, save = True, path = 'phi.pt', *args, **kwargs):
+    def redmap(self, phi, MU, OUT = None, minmax = False, load = False, training = True, save = True, path = 'phi.pt', epochs = 100, *args, **kwargs):
 
         if OUT is None:
             if minmax or training:
@@ -189,7 +189,7 @@ class OCP():
 
             if training:
                 phi.He() # NN initialization
-                self.train(phi, MU, OUT_std, self.ntrain, *args, **kwargs)
+                self.train(phi, MU, OUT_std, self.ntrain, epochs, *args, **kwargs)
         
         if load:
             phi.load_state_dict(torch.load(path))
@@ -209,7 +209,7 @@ class OCP():
 
         return OUT_hat_list
     
-    def latent_policy(self, Y, U, MU, encoder_Y, decoder_Y, encoder_U, decoder_U, policy, training = True, save = True, path = 'NN/',  *args, **kwargs):
+    def latent_policy(self, Y, U, MU, encoder_Y, decoder_Y, encoder_U, decoder_U, policy, training = True, save = True, path = 'NN/',  epochs = 100, *args, **kwargs):
         
         autoencoder_Y = encoder_Y + decoder_Y
         autoencoder_U = encoder_U + decoder_U
@@ -218,7 +218,7 @@ class OCP():
             autoencoder_Y.He()
             autoencoder_U.He()
             policy.He()
-            self.train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, self.ntrain, *args, **kwargs)
+            self.train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, self.ntrain, epochs, *args, **kwargs)
         else:
             autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
             autoencoder_Y.eval()
@@ -244,7 +244,7 @@ class OCP():
 
         return Y_AE, Y_reconstructed, U_AE, U_reconstructed, U_DLROM_hat, U_hat
 
-    def train(dnn, input, output, ntrain, epochs = 100, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, nvalid = 0, verbose = True, notation = '%', batchsize = None, slope = 1.0, until = None, best = False, refresh = True, dropout = 0.0):
+    def train(dnn, input, output, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, nvalid = 0, verbose = True, notation = '%', batchsize = None, slope = 1.0, until = None, best = False, refresh = True, dropout = 0.0):
         
         conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
         optimizer = optim(dnn.parameters(), lr = lr)
@@ -332,7 +332,7 @@ class OCP():
         err = np.stack(err)
         return err, clock.elapsed()
             
-    def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, ntrain, epochs = 100, batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
+    def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, ntrain, epochs, batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
 
         conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
 
@@ -460,7 +460,7 @@ class OCP():
         err4 = np.stack(err4)
         return err1, err2, err3, err4, clock.elapsed()
 """
-    def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, U, MU, ntrain, epochs = 100, batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
+    def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, U, MU, ntrain, epochs, batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
 
         conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
 
