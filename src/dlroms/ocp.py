@@ -332,7 +332,7 @@ def train(dnn, input, output, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1,
     err = np.stack(err)
     return err, clock.elapsed()
         
-def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, ntrain, epochs, batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
+def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, ntrain, epochs, weights = [1,1,1], batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
 
     conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
 
@@ -372,10 +372,10 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
         if(batchsize == None):
             def closure():
                 optimizer.zero_grad()
-                lossf = loss(Ytrain, autoencoder_Y(Ytrain)) + \
-                loss(Utrain, autoencoder_U(Utrain)) + \
+                lossf = weights[0]*loss(Ytrain, autoencoder_Y(Ytrain)) + \
+                weights[1]*loss(Utrain, autoencoder_U(Utrain)) + \
                 loss(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))) + \
-                loss(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))))
+                weights[2]*loss(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))))
                 lossf.backward()
                 return lossf
             optimizer.step(closure)
@@ -388,10 +388,10 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
                 MUbatch = MUtrain[indexes[(j*batchsize):((j+1)*batchsize)]]
                 def closure():
                     optimizer.zero_grad()
-                    lossf = loss(Ybatch, autoencoder_Y(Ybatch)) + \
-                    loss(Ubatch, autoencoder_U(Ubatch)) + \
+                    lossf = weights[0]*loss(Ybatch, autoencoder_Y(Ybatch)) + \
+                    weights[1]*loss(Ubatch, autoencoder_U(Ubatch)) + \
                     loss(encoder_U(Ubatch), policy(torch.cat((MUbatch, encoder_Y(Ybatch)), 1))) + \
-                    loss(Ubatch, decoder_U(policy(torch.cat((MUbatch, encoder_Y(Ybatch)), 1))))
+                    weights[2]*loss(Ubatch, decoder_U(policy(torch.cat((MUbatch, encoder_Y(Ybatch)), 1))))
                     lossf.backward()
                     return lossf
                 optimizer.step(closure)  
