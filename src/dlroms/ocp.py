@@ -231,18 +231,59 @@ class OCP():
         autoencoder_U.freeze()
         policy.freeze()
 
-        Y_AE = encoder_Y(Y)
-        Y_reconstructed = decoder_Y(Y_AE)
-        U_AE = encoder_U(U)
-        U_reconstructed = decoder_U(U_AE)
-        U_DLROM_hat = policy(torch.cat((MU, Y_AE),1))
-        U_hat = decoder_U(U_DLROM_hat)
+        Y_reconstructed = decoder_Y(encoder_Y(Y))
+        U_reconstructed = decoder_U(encoder_U(U))
+        U_hat = decoder_U(policy(torch.cat((encoder_Y(Y), MU),1)))
+        
         if save:
             torch.save(autoencoder_Y.state_dict(), path + 'autoencoder_Y')
             torch.save(autoencoder_U.state_dict(), path + 'autoencoder_U')
             torch.save(policy.state_dict(), path + 'policy')
 
-        return Y_AE, Y_reconstructed, U_AE, U_reconstructed, U_DLROM_hat, U_hat
+        return Y_reconstructed, U_reconstructed, U_hat
+    
+    def latent_loop(self, ntrajectories, Y, U, MU, encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, training = True, save = True, path = 'NN/', *args, **kwargs):
+ 
+        autoencoder_Y = encoder_Y + decoder_Y
+        autoencoder_U = encoder_U + decoder_U
+        mask_Y0 = [True, True, True, False]
+        mask_Y1 = [False, True, True, True]
+        Y0 = Y[mask_Y0 * ntrajectories]
+        Y1 = Y[mask_Y1 * ntrajectories]
+        
+        if training:
+            autoencoder_Y.He()
+            autoencoder_U.He()
+            policy.He()
+            train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, Y0, Y1, U, MU, self.ntrain, *args, **kwargs)
+        else:
+            autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
+            autoencoder_Y.eval()
+            autoencoder_U.load_state_dict(torch.load(path + 'autoencoder_U'))
+            autoencoder_U.eval()
+            policy.load_state_dict(torch.load(path + 'policy'))
+            policy.eval()
+            phi.load_state_dict(torch.load(path + 'policy'))
+            phi.eval()
+        
+        autoencoder_Y.freeze()
+        autoencoder_U.freeze()
+        policy.freeze()
+        phi.freeze()
+
+        Y_reconstructed = decoder_Y(encoder_Y(Y))
+        U_reconstructed = decoder_U(encoder_U(U))
+        U_hat = decoder_U(policy(torch.cat((encoder_Y(Y0), MU),1)))
+        Y1_hat = decoder_Y(phi(torch.cat((encoder_Y(Y0), encoder_U(U), MU),1)))
+
+        if save:
+            torch.save(autoencoder_Y.state_dict(), path + 'autoencoder_Y')
+            torch.save(autoencoder_U.state_dict(), path + 'autoencoder_U')
+            torch.save(policy.state_dict(), path + 'policy')
+            torch.save(phi.state_dict(), path + 'phi')
+
+        return Y_reconstructed, U_reconstructed, U_hat, Y1_hat
+
 
 def train(dnn, input, output, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, nvalid = 0, verbose = True, notation = '%', batchsize = None, slope = 1.0, until = None, best = False, refresh = True, dropout = 0.0):
     
@@ -332,6 +373,7 @@ def train(dnn, input, output, ntrain, epochs, optim = torch.optim.LBFGS, lr = 1,
     err = np.stack(err)
     return err, clock.elapsed()
         
+
 def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, ntrain, epochs, weights = [1,1,1], batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
 
     conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
@@ -364,8 +406,8 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
 
     validerr1 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Yvalid, autoencoder_Y(Yvalid)).item())
     validerr2 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, autoencoder_U(Uvalid)).item())
-    validerr3 = (lambda : np.nan) if nvalid == 0 else (lambda : error(torch.cat(encoder_U(Uvalid), policy(torch.cat((MUvalid, encoder_Y(Ytrain)), 1))).item()))
-    validerr4 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, decoder_U(policy(torch.cat((MUvalid, encoder_Y(Ytrain)), 1)))).item())
+    validerr3 = (lambda : np.nan) if nvalid == 0 else (lambda : error(torch.cat(encoder_U(Uvalid), policy(torch.cat((encoder_Y(Ytrain)), MUvalid, 1))).item()))
+    validerr4 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, decoder_U(policy(torch.cat((encoder_Y(Ytrain), MUvalid), 1)))).item())
 
     for e in range(epochs):
         
@@ -374,8 +416,8 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
                 optimizer.zero_grad()
                 lossf = weights[0]*loss(Ytrain, autoencoder_Y(Ytrain)) + \
                 weights[1]*loss(Utrain, autoencoder_U(Utrain)) + \
-                loss(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))) + \
-                weights[2]*loss(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))))
+                loss(encoder_U(Utrain), policy(torch.cat((encoder_Y(Ytrain), MUtrain), 1))) + \
+                weights[2]*loss(Utrain, decoder_U(policy(torch.cat((encoder_Y(Ytrain), MUtrain), 1))))
                 lossf.backward()
                 return lossf
             optimizer.step(closure)
@@ -390,8 +432,8 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
                     optimizer.zero_grad()
                     lossf = weights[0]*loss(Ybatch, autoencoder_Y(Ybatch)) + \
                     weights[1]*loss(Ubatch, autoencoder_U(Ubatch)) + \
-                    loss(encoder_U(Ubatch), policy(torch.cat((MUbatch, encoder_Y(Ybatch)), 1))) + \
-                    weights[2]*loss(Ubatch, decoder_U(policy(torch.cat((MUbatch, encoder_Y(Ybatch)), 1))))
+                    loss(encoder_U(Ubatch), policy(torch.cat((encoder_Y(Ybatch), MUbatch), 1))) + \
+                    weights[2]*loss(Ubatch, decoder_U(policy(torch.cat((encoder_Y(Ybatch), MUbatch), 1))))
                     lossf.backward()
                     return lossf
                 optimizer.step(closure)  
@@ -407,12 +449,12 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
                         error(Utest, autoencoder_U(Utest)).item(),
                         validerr2(),
                     ])
-            err3.append([error(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1))).item(),
-                        error(encoder_U(Utest), policy(torch.cat((MUtest, encoder_Y(Ytest)), 1))).item(),
+            err3.append([error(encoder_U(Utrain), policy(torch.cat((encoder_Y(Ytrain), MUtrain), 1))).item(),
+                        error(encoder_U(Utest), policy(torch.cat((encoder_Y(Ytest), MUtest), 1))).item(),
                         validerr3(),
                     ])
-            err4.append([error(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Ytrain)), 1)))).item(),
-                        error(Utest, decoder_U(policy(torch.cat((MUtest, encoder_Y(Ytest)), 1)))).item(),
+            err4.append([error(Utrain, decoder_U(policy(torch.cat((encoder_Y(Ytrain), MUtrain), 1)))).item(),
+                        error(Utest, decoder_U(policy(torch.cat((encoder_Y(Ytest), MUtest), 1)))).item(),
                         validerr4(),
                     ])
         
@@ -459,167 +501,168 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
     err3 = np.stack(err3)
     err4 = np.stack(err4)
     return err1, err2, err3, err4, clock.elapsed()
-    """
-    def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, U, MU, ntrain, epochs, batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
+    
+def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, Y0, Y1, U, MU, ntrain, epochs, weights = [1,1,1,1,1], batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
 
-        conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
+    conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
 
-        autoencoder_Y = encoder_Y + decoder_Y
-        autoencoder_U = encoder_U + decoder_U
+    autoencoder_Y = encoder_Y + decoder_Y
+    autoencoder_U = encoder_U + decoder_U
 
-        optimizer = optim(list(autoencoder_Y.parameters()) + list(autoencoder_U.parameters()) + list(policy.parameters()) + list(phi.parameters()), lr = lr)
+    optimizer = optim(list(autoencoder_Y.parameters()) + list(autoencoder_U.parameters()) + list(policy.parameters()) + list(phi.parameters()), lr = lr)
 
-        ntimesteps = U.shape[1]
-        nstate = Y.shape[2]
-        ncontrol = U.shape[2]
-        nparams = MU.shape[2]
-        ntest = len(Y)-ntrain
-        Ytrain, Ytest, Yvalid = Y[:(ntrain-nvalid)].reshape(-1, nstate), Y[-ntest:].reshape(-1, nstate), Y[(ntrain-nvalid):ntrain].reshape(-1, nstate)
-        Y0train, Y0test, Y0valid = Y[:(ntrain-nvalid),:ntimesteps].reshape(-1, nstate), Y[-ntest:,:ntimesteps].reshape(-1, nstate), Y[(ntrain-nvalid):ntrain,:ntimesteps].reshape(-1, nstate)
-        Y1train, Y1test, Y1valid = Y[:(ntrain-nvalid),1:].reshape(-1, nstate), Y[-ntest:,1:].reshape(-1, nstate), Y[(ntrain-nvalid):ntrain,1:].reshape(-1, nstate)
-        Utrain, Utest, Uvalid = U[:(ntrain-nvalid)].reshape(-1, ncontrol), U[-ntest:].reshape(-1, ncontrol), U[(ntrain-nvalid):ntrain].reshape(-1, ncontrol)
-        MUtrain, MUtest, MUvalid = MU[:(ntrain-nvalid)].reshape(-1, nparams), MU[-ntest:].reshape(-1, nparams), MU[(ntrain-nvalid):ntrain].reshape(-1, nparams)
+    ntrainY = ntrain * len(Y) // len(U)
+    nvalidY = nvalid * len(Y) // len(U)
+    ntestY = len(Y)-ntrainY
+    ntest = len(U)-ntrain
+    Ytrain, Ytest, Yvalid = Y[:(ntrainY-nvalidY)], Y[-ntestY:], Y[(ntrainY-nvalidY):ntrainY]
+    Y0train, Y0test, Y0valid = Y0[:(ntrain-nvalid)], Y0[-ntest:], Y0[(ntrain-nvalid):ntrain]
+    Y1train, Y1test, Y1valid = Y1[:(ntrain-nvalid)], Y1[-ntest:], Y1[(ntrain-nvalid):ntrain]
+    Utrain, Utest, Uvalid = U[:(ntrain-nvalid)], U[-ntest:], U[(ntrain-nvalid):ntrain]
+    MUtrain, MUtest, MUvalid = MU[:(ntrain-nvalid)], MU[-ntest:], MU[(ntrain-nvalid):ntrain]
 
-        if(error == None):
-            def error(a, b):
-                return loss(a, b)
+    if(error == None):
+        def error(a, b):
+            return loss(a, b)
 
-        err1 = []
-        err2 = []
-        err3 = []
-        err4 = []
-        err5 = []
-        err6 = []
-        bestv1 = np.inf
-        bestv2 = np.inf
-        bestv3 = np.inf
-        bestv4 = np.inf
-        bestv5 = np.inf
-        bestv6 = np.inf
-        tempcode = int(np.random.rand(1)*1000)
-        clock = Clock()
-        clock.start()
+    err1 = []
+    err2 = []
+    err3 = []
+    err4 = []
+    err5 = []
+    err6 = []
+    bestv1 = np.inf
+    bestv2 = np.inf
+    bestv3 = np.inf
+    bestv4 = np.inf
+    bestv5 = np.inf
+    bestv6 = np.inf
+    tempcode = int(np.random.rand(1)*1000)
+    clock = Clock()
+    clock.start()
 
-        validerr1 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Yvalid, autoencoder_Y(Yvalid)).item())
-        validerr2 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, autoencoder_U(Uvalid)).item())
-        validerr3 = (lambda : np.nan) if nvalid == 0 else (lambda : error(torch.cat(encoder_U(Uvalid), policy(torch.cat((MUvalid, encoder_Y(Y0valid)), 1))).item()))
-        validerr4 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, decoder_U(policy(torch.cat((MUvalid, encoder_Y(Y0valid)), 1)))).item())
-        validerr5 = (lambda : np.nan) if nvalid == 0 else (lambda : error(encoder_Y(Y1valid), phi(torch.cat((MUvalid, encoder_Y(Y0valid), policy(torch.cat((MUvalid, encoder_Y(Y0valid)),1))),1))).item())
-        validerr6 = (lambda : np.nan) if nvalid == 0 else (lambda : error(encoder_Y(Y1valid), phi(torch.cat((MUvalid, encoder_Y(Y0valid), encoder_U(Uvalid)), 1))).item())
+    validerr1 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Yvalid, autoencoder_Y(Yvalid)).item())
+    validerr2 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, autoencoder_U(Uvalid)).item())
+    validerr3 = (lambda : np.nan) if nvalid == 0 else (lambda : error(torch.cat(encoder_U(Uvalid), policy(torch.cat((encoder_Y(Y0valid), MUvalid), 1))).item()))
+    validerr4 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, decoder_U(policy(torch.cat((encoder_Y(Y0valid), MUvalid), 1)))).item())
+    validerr5 = (lambda : np.nan) if nvalid == 0 else (lambda : error(encoder_Y(Y1valid), phi(torch.cat((encoder_Y(Y0valid), policy(torch.cat((encoder_Y(Y0valid), MUvalid), 1)), MUvalid), 1))).item())
+    validerr6 = (lambda : np.nan) if nvalid == 0 else (lambda : error(encoder_Y(Y1valid), phi(torch.cat((encoder_Y(Y0valid), encoder_U(Uvalid), MUvalid), 1))).item())
 
-        for e in range(epochs):
-            
-            if(batchsize == None):
+    for e in range(epochs):
+        
+        if(batchsize == None):
+            def closure():
+                optimizer.zero_grad()
+                lossf = weights[0]*loss(Ytrain, autoencoder_Y(Ytrain)) + \
+                weights[1]*loss(Utrain, autoencoder_U(Utrain)) + \
+                loss(encoder_U(Utrain), policy(torch.cat((encoder_Y(Y0train), MUtrain), 1))) + \
+                weights[2]*loss(Utrain, decoder_U(policy(torch.cat((encoder_Y(Y0train), MUtrain), 1)))) + \
+                weights[3]*loss(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), policy(torch.cat((MUtrain, encoder_Y(Y0train)),1)), MUtrain), 1))) + \
+                weights[4]*loss(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), encoder_U(Utrain), MUtrain), 1)))
+                lossf.backward()
+                return lossf
+            optimizer.step(closure)
+        else:
+            indexesY = np.random.permutation(ntrainY-nvalidY)
+            indexes = np.random.permutation(ntrain-nvalid)
+            nbatch = ntrain//batchsize
+            batchsizeY = ntrainY//nbatch            
+            for j in range(nbatch):
+                Ybatch = Ytrain[indexesY[(j*batchsizeY):((j+1)*batchsizeY)]]
+                Y0batch = Y0train[indexes[(j*batchsize):((j+1)*batchsize)]]
+                Y1batch = Y1train[indexes[(j*batchsize):((j+1)*batchsize)]]
+                Ubatch = U[indexes[(j*batchsize):((j+1)*batchsize)]]
+                MUbatch = MU[indexes[(j*batchsize):((j+1)*batchsize)]]
                 def closure():
                     optimizer.zero_grad()
-                    lossf = loss(Ytrain, autoencoder_Y(Ytrain)) + \
-                    loss(Utrain, autoencoder_U(Utrain)) + \
-                    loss(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Y0train)), 1))) + \
-                    loss(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Y0train)), 1)))) + \
-                    loss(encoder_Y(Y1train), phi(torch.cat((MUtrain, encoder_Y(Y0train), policy(torch.cat((MUtrain, encoder_Y(Y0train)),1))),1))) + \
-                    loss(encoder_Y(Y1train), phi(torch.cat((MUtrain, encoder_Y(Y0train), encoder_U(Utrain)), 1)))
+                    lossf = weights[0]*loss(Ybatch, autoencoder_Y(Ybatch)) + \
+                    weights[1]*loss(Ubatch, autoencoder_U(Ubatch)) + \
+                    loss(encoder_U(Ubatch), policy(torch.cat((encoder_Y(Y0batch), MUbatch), 1))) + \
+                    weights[2]*loss(Ubatch, decoder_U(policy(torch.cat((encoder_Y(Y0batch), MUbatch), 1)))) + \
+                    weights[3]*loss(encoder_Y(Y1batch), phi(torch.cat((encoder_Y(Y0batch), policy(torch.cat((encoder_Y(Y0batch), MUbatch),1)), MUbatch),1))) + \
+                    weights[4]*loss(encoder_Y(Y1batch), phi(torch.cat((encoder_Y(Y0batch), encoder_U(Ubatch), MUbatch), 1)))
                     lossf.backward()
                     return lossf
-                optimizer.step(closure)
-            else:
-                indexes = np.random.permutation(ntrain-nvalid)
-                nbatch = ntrain//batchsize
-                for j in range(nbatch):
-                    Ybatch = Y[indexes[(j*batchsize):((j+1)*batchsize)]].reshape(-1, nstate)
-                    Y0batch = Y[indexes[(j*batchsize):((j+1)*batchsize)],:ntimesteps].reshape(-1, nstate)
-                    Y1batch = Y[indexes[(j*batchsize):((j+1)*batchsize)],1:].reshape(-1, nstate)
-                    Ubatch = U[indexes[(j*batchsize):((j+1)*batchsize)]].reshape(-1, ncontrol)
-                    MUbatch = MU[indexes[(j*batchsize):((j+1)*batchsize)]].reshape(-1, nparams)
-                    def closure():
-                        optimizer.zero_grad()
-                        lossf = loss(Ybatch, autoencoder_Y(Ybatch)) + \
-                        loss(Ubatch, autoencoder_U(Ubatch)) + \
-                        loss(encoder_U(Ubatch), policy(torch.cat((MUbatch, encoder_Y(Y0batch)), 1))) + \
-                        loss(Ubatch, decoder_U(policy(torch.cat((MUbatch, encoder_Y(Y0batch)), 1)))) + \
-                        loss(encoder_Y(Y1batch), phi(torch.cat((MUbatch, encoder_Y(Y0batch), policy(torch.cat((MUbatch, encoder_Y(Y0batch)),1))),1))) + \
-                        loss(encoder_Y(Y1batch), phi(torch.cat((MUbatch, encoder_Y(Y0batch), encoder_U(Ubatch)), 1)))
-                        lossf.backward()
-                        return lossf
-                    optimizer.step(closure)  
-                    
-            with torch.no_grad():
-                if(autoencoder_Y.l2().isnan().item() or autoencoder_U.l2().isnan().item() or policy.l2().isnan().item() or  phi.l2().isnan().item()):
-                    break
-                err1.append([error(Ytrain, autoencoder_Y(Ytrain)).item(),
-                            error(Ytest, autoencoder_Y(Ytest)).item(),
-                            validerr1(),
-                        ])
-                err2.append([error(Utrain, autoencoder_U(Utrain)).item(),
-                            error(Utest, autoencoder_U(Utest)).item(),
-                            validerr2(),
-                        ])
-                err3.append([error(encoder_U(Utrain), policy(torch.cat((MUtrain, encoder_Y(Y0train)), 1))).item(),
-                            error(encoder_U(Utest), policy(torch.cat((MUtest, encoder_Y(Y0test)), 1))).item(),
-                            validerr3(),
-                        ])
-                err4.append([error(Utrain, decoder_U(policy(torch.cat((MUtrain, encoder_Y(Y0train)), 1)))).item(),
-                            error(Utest, decoder_U(policy(torch.cat((MUtest, encoder_Y(Y0test)), 1)))).item(),
-                            validerr4(),
-                        ])
-                err5.append([error(encoder_Y(Y1train), phi(torch.cat((MUtrain, encoder_Y(Y0train), policy(torch.cat((MUtrain, encoder_Y(Y0train)),1))),1))).item(),
-                            error(encoder_Y(Y1test), phi(torch.cat((MUtest, encoder_Y(Y0test), policy(torch.cat((MUtest, encoder_Y(Y0test)),1))),1))).item(),
-                            validerr5(),
-                        ])
-                err6.append([error(encoder_Y(Y1train), phi(torch.cat((MUtrain, encoder_Y(Y0train), encoder_U(Utrain)), 1))).item(),
-                            error(encoder_Y(Y1test), phi(torch.cat((MUtest, encoder_Y(Y0test), encoder_U(Utest)), 1))).item(),
-                            validerr6(),
-                        ])
-            
-                if(verbose):
-                    if(refresh):
-                        clear_output(wait = True)
-
-                    print("Epoch " + str(e+1))
-                    print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
-                    print("AE_y \t\t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
-                    print("AE_U \t\t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
-                    print("Policy \t" + conv(err3[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err3[-1][2]))) + "\t" + conv(err3[-1][1]) + ".")
-                    print("Policy(POD) \t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
-                    print("Phi \t" + conv(err5[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err5[-1][2]))) + "\t" + conv(err5[-1][1]) + ".")
-                    print("Phi(Policy) \t" + conv(err6[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err6[-1][2]))) + "\t" + conv(err6[-1][1]) + ".")
-
-                if(best and e > 0):
-                    if(err1[-1][1] < bestv1 and err2[-1][1] < bestv2 and err3[-1][1] < bestv3 and err4[-1][1] < bestv4 and err5[-1][1] < bestv5 and err6[-1][1] < bestv6):
-                        bestv1 = err1[-1][1] + 0.0
-                        autoencoder_Y.save("temp_autoencoder_Y_%d" % tempcode)
-                        bestv2 = err2[-1][1] + 0.0
-                        autoencoder_U.save("temp_autoencoder_U_%d" % tempcode)
-                        bestv3 = err3[-1][1] + 0.0
-                        bestv4 = err4[-1][1] + 0.0
-                        policy.save("temp_policy_%d" % tempcode)
-                        bestv5 = err5[-1][1] + 0.0
-                        bestv6 = err6[-1][1] + 0.0
-                        phi.save("temp_phi_%d" % tempcode)
+                optimizer.step(closure)  
                 
-        if(best):
-            try:
-                autoencoder_Y.load("temp_autoencoder_Y_%d" % tempcode) 
-                for file in autoencoder_Y.files("temp_autoencoder_Y_%d" % tempcode):
-                    os.remove(file)
-                autoencoder_U.load("temp_autoencoder_U_%d" % tempcode) 
-                for file in autoencoder_U.files("temp_autoencoder_U_%d" % tempcode):
-                    os.remove(file)
-                policy.load("temp_policy_%d" % tempcode) 
-                for file in policy.files("temp_policy_%d" % tempcode):
-                    os.remove(file)
-                phi.load("temp_phi_%d" % tempcode) 
-                for file in phi.files("temp_phi_%d" % tempcode):
-                    os.remove(file)
-            except:
-                None
-        clock.stop()
-        if(verbose):
-            print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
+        with torch.no_grad():
+            if(autoencoder_Y.l2().isnan().item() or autoencoder_U.l2().isnan().item() or policy.l2().isnan().item() or  phi.l2().isnan().item()):
+                break
+            err1.append([error(Ytrain, autoencoder_Y(Ytrain)).item(),
+                        error(Ytest, autoencoder_Y(Ytest)).item(),
+                        validerr1(),
+                    ])
+            err2.append([error(Utrain, autoencoder_U(Utrain)).item(),
+                        error(Utest, autoencoder_U(Utest)).item(),
+                        validerr2(),
+                    ])
+            err3.append([error(encoder_U(Utrain), policy(torch.cat((encoder_Y(Y0train), MUtrain), 1))).item(),
+                        error(encoder_U(Utest), policy(torch.cat((encoder_Y(Y0test), MUtest), 1))).item(),
+                        validerr3(),
+                    ])
+            err4.append([error(Utrain, decoder_U(policy(torch.cat((encoder_Y(Y0train), MUtrain), 1)))).item(),
+                        error(Utest, decoder_U(policy(torch.cat((encoder_Y(Y0test), MUtest), 1)))).item(),
+                        validerr4(),
+                    ])
+            err5.append([error(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), policy(torch.cat((encoder_Y(Y0train), MUtrain),1)), MUtrain),1))).item(),
+                        error(encoder_Y(Y1test), phi(torch.cat((encoder_Y(Y0test), policy(torch.cat((encoder_Y(Y0test), MUtest),1)), MUtest),1))).item(),
+                        validerr5(),
+                    ])
+            err6.append([error(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), encoder_U(Utrain), MUtrain), 1))).item(),
+                        error(encoder_Y(Y1test), phi(torch.cat((encoder_Y(Y0test), encoder_U(Utest), MUtest), 1))).item(),
+                        validerr6(),
+                    ])
+        
+            if(verbose):
+                if(refresh):
+                    clear_output(wait = True)
 
-        err1 = np.stack(err1)
-        err2 = np.stack(err2)
-        err3 = np.stack(err3)
-        err4 = np.stack(err4)
-        err4 = np.stack(err5)
-        err4 = np.stack(err6)
-        return err1, err2, err3, err4, err5, err6, clock.elapsed() """
+                print("Epoch " + str(e+1))
+                print("\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
+                print("AE_y \t\t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
+                print("AE_U \t\t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
+                print("Policy \t" + conv(err3[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err3[-1][2]))) + "\t" + conv(err3[-1][1]) + ".")
+                print("Policy(Decoding) \t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
+                print("Phi \t" + conv(err5[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err5[-1][2]))) + "\t" + conv(err5[-1][1]) + ".")
+                print("Phi(Policy) \t" + conv(err6[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err6[-1][2]))) + "\t" + conv(err6[-1][1]) + ".")
+
+            if(best and e > 0):
+                if(err1[-1][1] < bestv1 and err2[-1][1] < bestv2 and err3[-1][1] < bestv3 and err4[-1][1] < bestv4 and err5[-1][1] < bestv5 and err6[-1][1] < bestv6):
+                    bestv1 = err1[-1][1] + 0.0
+                    autoencoder_Y.save("temp_autoencoder_Y_%d" % tempcode)
+                    bestv2 = err2[-1][1] + 0.0
+                    autoencoder_U.save("temp_autoencoder_U_%d" % tempcode)
+                    bestv3 = err3[-1][1] + 0.0
+                    bestv4 = err4[-1][1] + 0.0
+                    policy.save("temp_policy_%d" % tempcode)
+                    bestv5 = err5[-1][1] + 0.0
+                    bestv6 = err6[-1][1] + 0.0
+                    phi.save("temp_phi_%d" % tempcode)
+            
+    if(best):
+        try:
+            autoencoder_Y.load("temp_autoencoder_Y_%d" % tempcode) 
+            for file in autoencoder_Y.files("temp_autoencoder_Y_%d" % tempcode):
+                os.remove(file)
+            autoencoder_U.load("temp_autoencoder_U_%d" % tempcode) 
+            for file in autoencoder_U.files("temp_autoencoder_U_%d" % tempcode):
+                os.remove(file)
+            policy.load("temp_policy_%d" % tempcode) 
+            for file in policy.files("temp_policy_%d" % tempcode):
+                os.remove(file)
+            phi.load("temp_phi_%d" % tempcode) 
+            for file in phi.files("temp_phi_%d" % tempcode):
+                os.remove(file)
+        except:
+            None
+    clock.stop()
+    if(verbose):
+        print("\nTraining complete. Elapsed time: " + clock.elapsedTime() + ".")
+
+    err1 = np.stack(err1)
+    err2 = np.stack(err2)
+    err3 = np.stack(err3)
+    err4 = np.stack(err4)
+    err4 = np.stack(err5)
+    err4 = np.stack(err6)
+    return err1, err2, err3, err4, err5, err6, clock.elapsed()
