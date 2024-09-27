@@ -139,12 +139,13 @@ class OCP():
 
         return S_POD, S_reconstructed, pod, eig
     
-    def AE(self, S, encoder, decoder, training = True, save = True, path = 'autoencoder.pt', *args, **kwargs):
+    def AE(self, S, encoder, decoder, training = True, initialization = True, save = True, path = 'autoencoder.pt', *args, **kwargs):
 
         autoencoder = encoder + decoder
         
         if training:
-            autoencoder.He() # NN initialization
+            if initialization:
+                autoencoder.He() # NN initialization
             train(autoencoder, S, S, self.ntrain, *args, **kwargs)
         else:
             autoencoder.load_state_dict(torch.load(path))
@@ -159,16 +160,16 @@ class OCP():
 
         return S_AE, S_reconstructed
 
-    def PODAE(self, S, k, encoder, decoder, training = True, save = True, path = 'autoencoder.pt', decay = True, color = "black", *args, **kwargs):
+    def PODAE(self, S, k, encoder, decoder, training = True, initialization = True, save = True, path = 'autoencoder.pt', decay = True, color = "black", *args, **kwargs):
         
         S_POD, S_reconstructed_POD, pod, eig = self.POD(S, k, decay, color)
-        S_DLROM, S_reconstructed_DLROM = self.AE(S_POD, encoder, decoder, training, save, path,  *args, **kwargs)
+        S_DLROM, S_reconstructed_DLROM = self.AE(S_POD, encoder, decoder, training, initialization, save, path,  *args, **kwargs)
         S_reconstructed = projectup(pod, decoder(S_DLROM))
 
         return S_DLROM, S_reconstructed, pod, eig
 
 
-    def redmap(self, phi, MU, OUT = None, minmax = False, load = False, training = True, save = True, path = 'phi.pt', *args, **kwargs):
+    def redmap(self, phi, MU, OUT = None, minmax = False, training = True, initialization = True, save = True, path = 'phi.pt', *args, **kwargs):
 
         if OUT is None:
             if minmax or training:
@@ -188,12 +189,12 @@ class OCP():
             OUT_std = torch.cat(OUT_std, 1)
 
             if training:
-                phi.He() # NN initialization
+                if initialization:
+                    phi.He() # NN initialization
                 train(phi, MU, OUT_std, self.ntrain, *args, **kwargs)
-        
-        if load:
-            phi.load_state_dict(torch.load(path))
-            phi.eval()
+            else:
+                phi.load_state_dict(torch.load(path))
+                phi.eval()
                
         phi.freeze()
         OUT_hat = phi(MU)
@@ -209,15 +210,16 @@ class OCP():
 
         return OUT_hat_list
     
-    def latent_policy(self, Y, U, MU, encoder_Y, decoder_Y, encoder_U, decoder_U, policy, training = True, save = True, path = 'NN/', *args, **kwargs):
+    def latent_policy(self, Y, U, MU, encoder_Y, decoder_Y, encoder_U, decoder_U, policy, training = True, initialization = True, save = True, path = 'NN/', *args, **kwargs):
         
         autoencoder_Y = encoder_Y + decoder_Y
         autoencoder_U = encoder_U + decoder_U
 
         if training:
-            autoencoder_Y.He()
-            autoencoder_U.He()
-            policy.He()
+            if initialization:
+                autoencoder_Y.He()
+                autoencoder_U.He()
+                policy.He()
             train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, self.ntrain, *args, **kwargs)
         else:
             autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
@@ -242,7 +244,7 @@ class OCP():
 
         return Y_reconstructed, U_reconstructed, U_hat
     
-    def latent_loop(self, ntrajectories, Y, U, MU, encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, training = True, save = True, path = 'NN/', *args, **kwargs):
+    def latent_loop(self, ntrajectories, Y, U, MU, encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, training = True, initialization = True, save = True, path = 'NN/', *args, **kwargs):
  
         autoencoder_Y = encoder_Y + decoder_Y
         autoencoder_U = encoder_U + decoder_U
@@ -252,9 +254,10 @@ class OCP():
         Y1 = Y[mask_Y1 * ntrajectories]
         
         if training:
-            autoencoder_Y.He()
-            autoencoder_U.He()
-            policy.He()
+            if initialization:
+                autoencoder_Y.He()
+                autoencoder_U.He()
+                policy.He()
             train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, Y0, Y1, U, MU, self.ntrain, *args, **kwargs)
         else:
             autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
