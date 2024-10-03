@@ -467,10 +467,10 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
 
                 print("Epoch " + str(e+1))
                 print("\t\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
-                print("Reduction(State) \t\t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
-                print("Reduction(Control) \t\t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
+                print("Reduction(State) \t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
+                print("Reduction(Control) \t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
                 print("Policy \t\t\t" + conv(err3[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err3[-1][2]))) + "\t" + conv(err3[-1][1]) + ".")
-                print("Policy(Decoding) \t\t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
+                print("Policy(Decoding) \t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
 
             if(best and e > 0):
                 if(err1[-1][1] < bestv1 and err2[-1][1] < bestv2 and err3[-1][1] < bestv3 and err4[-1][1] < bestv4):
@@ -622,12 +622,12 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
 
                 print("Epoch " + str(e+1))
                 print("\t\t\tTrain%s\tTest" % ("\tValid" if nvalid > 0 else ""))
-                print("Reduction(State) \t\t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
-                print("Reduction(Control) \t\t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
+                print("Reduction(State) \t" + conv(err1[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err1[-1][2]))) + "\t" + conv(err1[-1][1]) + ".")
+                print("Reduction(Control) \t" + conv(err2[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err2[-1][2]))) + "\t" + conv(err2[-1][1]) + ".")
                 print("Policy \t\t\t" + conv(err3[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err3[-1][2]))) + "\t" + conv(err3[-1][1]) + ".")
-                print("Policy(Decoding) \t\t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
+                print("Policy(Decoding) \t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
                 print("Phi \t\t\t" + conv(err5[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err5[-1][2]))) + "\t" + conv(err5[-1][1]) + ".")
-                print("Phi(Policy) \t\t" + conv(err6[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err6[-1][2]))) + "\t" + conv(err6[-1][1]) + ".")
+                print("Phi(Policy) \t" + conv(err6[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err6[-1][2]))) + "\t" + conv(err6[-1][1]) + ".")
 
             if(best and e > 0):
                 if(err1[-1][1] < bestv1 and err2[-1][1] < bestv2 and err3[-1][1] < bestv3 and err4[-1][1] < bestv4 and err5[-1][1] < bestv5 and err6[-1][1] < bestv6):
