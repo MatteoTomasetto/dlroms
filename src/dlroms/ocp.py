@@ -258,6 +258,7 @@ class OCP():
                 autoencoder_Y.He()
                 autoencoder_U.He()
                 policy.He()
+                phi.He()
             train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, Y0, Y1, U, MU, self.ntrain, *args, **kwargs)
         else:
             autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
