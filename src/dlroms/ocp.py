@@ -560,7 +560,7 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
                 weights[1]*loss(Utrain, autoencoder_U(Utrain)) + \
                 loss(encoder_U(Utrain), policy(torch.cat((encoder_Y(Y0train), MUtrain), 1))) + \
                 weights[2]*loss(Utrain, decoder_U(policy(torch.cat((encoder_Y(Y0train), MUtrain), 1)))) + \
-                weights[3]*loss(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), policy(torch.cat((MUtrain, encoder_Y(Y0train)),1)), MUtrain), 1))) + \
+                weights[3]*loss(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), policy(torch.cat((encoder_Y(Y0train), MUtrain),1)), MUtrain), 1))) + \
                 weights[4]*loss(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), encoder_U(Utrain), MUtrain), 1)))
                 lossf.backward()
                 return lossf
