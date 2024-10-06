@@ -505,7 +505,7 @@ def train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U
     err4 = np.stack(err4)
     return err1, err2, err3, err4, clock.elapsed()
     
-def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, Y0, Y1, U, MU, ntrain, epochs, weights = [1,1,1,1,1], batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
+def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, Y0, Y1, U, MU, ntrain, epochs, weights = [1,1,1,1,1,1], batchsize = None, optim = torch.optim.LBFGS, lr = 1, loss = None, error = None, verbose = True, nvalid = 0, notation = '%', best = False, refresh = True):
 
     conv = (lambda x: num2p(x)) if notation == '%' else (lambda z: ("%.2"+notation) % z)
 
@@ -534,12 +534,14 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
     err4 = []
     err5 = []
     err6 = []
+    err7 = []
     bestv1 = np.inf
     bestv2 = np.inf
     bestv3 = np.inf
     bestv4 = np.inf
     bestv5 = np.inf
     bestv6 = np.inf
+    bestv7 = np.inf
     tempcode = int(np.random.rand(1)*1000)
     clock = Clock()
     clock.start()
@@ -550,6 +552,7 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
     validerr4 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Uvalid, decoder_U(policy(torch.cat((encoder_Y(Y0valid), MUvalid), 1)))).item())
     validerr5 = (lambda : np.nan) if nvalid == 0 else (lambda : error(encoder_Y(Y1valid), phi(torch.cat((encoder_Y(Y0valid), policy(torch.cat((encoder_Y(Y0valid), MUvalid), 1)), MUvalid), 1))).item())
     validerr6 = (lambda : np.nan) if nvalid == 0 else (lambda : error(encoder_Y(Y1valid), phi(torch.cat((encoder_Y(Y0valid), encoder_U(Uvalid), MUvalid), 1))).item())
+    validerr7 = (lambda : np.nan) if nvalid == 0 else (lambda : error(Y1valid, decoder_Y(phi(torch.cat((encoder_Y(Y0valid), encoder_U(Uvalid), MUvalid), 1)))).item())
 
     for e in range(epochs):
         
@@ -562,6 +565,7 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
                 weights[2]*loss(Utrain, decoder_U(policy(torch.cat((encoder_Y(Y0train), MUtrain), 1)))) + \
                 weights[3]*loss(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), policy(torch.cat((encoder_Y(Y0train), MUtrain),1)), MUtrain), 1))) + \
                 weights[4]*loss(encoder_Y(Y1train), phi(torch.cat((encoder_Y(Y0train), encoder_U(Utrain), MUtrain), 1)))
+                weights[5]*loss(Y1train, decoder_Y(phi(torch.cat((encoder_Y(Y0train), encoder_U(Utrain), MUtrain), 1))))
                 lossf.backward()
                 return lossf
             optimizer.step(closure)
@@ -584,6 +588,7 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
                     weights[2]*loss(Ubatch, decoder_U(policy(torch.cat((encoder_Y(Y0batch), MUbatch), 1)))) + \
                     weights[3]*loss(encoder_Y(Y1batch), phi(torch.cat((encoder_Y(Y0batch), policy(torch.cat((encoder_Y(Y0batch), MUbatch),1)), MUbatch),1))) + \
                     weights[4]*loss(encoder_Y(Y1batch), phi(torch.cat((encoder_Y(Y0batch), encoder_U(Ubatch), MUbatch), 1)))
+                    weights[5]*loss(Y1batch, decoder_Yphi(torch.cat((encoder_Y(Y0batch), encoder_U(Ubatch), MUbatch), 1))))
                     lossf.backward()
                     return lossf
                 optimizer.step(closure)  
@@ -615,6 +620,10 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
                         error(encoder_Y(Y1test), phi(torch.cat((encoder_Y(Y0test), encoder_U(Utest), MUtest), 1))).item(),
                         validerr6(),
                     ])
+            err7.append([error(Y1train, decoder_Y(phi(torch.cat((encoder_Y(Y0train), encoder_U(Utrain), MUtrain), 1)))).item(),
+                        error(Y1test, decoder_Y(phi(torch.cat((encoder_Y(Y0test), encoder_U(Utest), MUtest), 1)))).item(),
+                        validerr7(),
+                    ])
         
             if(verbose):
                 if(refresh):
@@ -628,9 +637,10 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
                 print("Policy(Decoding) \t" + conv(err4[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err4[-1][2]))) + "\t" + conv(err4[-1][1]) + ".")
                 print("Phi \t\t\t" + conv(err5[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err5[-1][2]))) + "\t" + conv(err5[-1][1]) + ".")
                 print("Phi(Policy) \t\t" + conv(err6[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err6[-1][2]))) + "\t" + conv(err6[-1][1]) + ".")
+                print("Phi(Decoding) \t" + conv(err7[-1][0]) + ("" if nvalid == 0 else ("\t" + conv(err7[-1][2]))) + "\t" + conv(err7[-1][1]) + ".")
 
             if(best and e > 0):
-                if(err1[-1][1] < bestv1 and err2[-1][1] < bestv2 and err3[-1][1] < bestv3 and err4[-1][1] < bestv4 and err5[-1][1] < bestv5 and err6[-1][1] < bestv6):
+                if(err1[-1][1] < bestv1 and err2[-1][1] < bestv2 and err3[-1][1] < bestv3 and err4[-1][1] < bestv4 and err5[-1][1] < bestv5 and err6[-1][1] < bestv6 and err7[-1][1] < bestv7):
                     bestv1 = err1[-1][1] + 0.0
                     autoencoder_Y.save("temp_autoencoder_Y_%d" % tempcode)
                     bestv2 = err2[-1][1] + 0.0
@@ -640,6 +650,7 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
                     policy.save("temp_policy_%d" % tempcode)
                     bestv5 = err5[-1][1] + 0.0
                     bestv6 = err6[-1][1] + 0.0
+                    bestv7 = err7[-1][1] + 0.0
                     phi.save("temp_phi_%d" % tempcode)
             
     if(best):
@@ -666,6 +677,7 @@ def train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y
     err2 = np.stack(err2)
     err3 = np.stack(err3)
     err4 = np.stack(err4)
-    err4 = np.stack(err5)
-    err4 = np.stack(err6)
-    return err1, err2, err3, err4, err5, err6, clock.elapsed()
+    err5 = np.stack(err5)
+    err6 = np.stack(err6)
+    err7 = np.stack(err7)
+    return err1, err2, err3, err4, err5, err6, err7, clock.elapsed()
