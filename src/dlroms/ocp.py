@@ -248,8 +248,9 @@ class OCP():
  
         autoencoder_Y = encoder_Y + decoder_Y
         autoencoder_U = encoder_U + decoder_U
-        mask_Y0 = [True, True, True, True, False]
-        mask_Y1 = [False, True, True, True, True]
+        ntimestepsY = Y.shape[0]//ntrajectories
+        mask_Y0 = [True]*ntimestepsY + [False]
+        mask_Y1 = [False] +  [True]*ntimestepsY
         Y0 = Y[mask_Y0 * ntrajectories]
         Y1 = Y[mask_Y1 * ntrajectories]
         
