@@ -148,7 +148,7 @@ class OCP():
                 autoencoder.He() # NN initialization
             train(autoencoder, S, S, self.ntrain, *args, **kwargs)
         else:
-            autoencoder.load_state_dict(torch.load(path))
+            autoencoder.load_state_dict(torch.load(path, weights_only = True))
             autoencoder.eval()
         
         autoencoder.freeze()
@@ -193,7 +193,7 @@ class OCP():
                     phi.He() # NN initialization
                 train(phi, MU, OUT_std, self.ntrain, *args, **kwargs)
             else:
-                phi.load_state_dict(torch.load(path))
+                phi.load_state_dict(torch.load(path, weights_only = True))
                 phi.eval()
                
         phi.freeze()
@@ -222,11 +222,11 @@ class OCP():
                 policy.He()
             train_latent_policy(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, Y, U, MU, self.ntrain, *args, **kwargs)
         else:
-            autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
+            autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y', weights_only = True))
             autoencoder_Y.eval()
-            autoencoder_U.load_state_dict(torch.load(path + 'autoencoder_U'))
+            autoencoder_U.load_state_dict(torch.load(path + 'autoencoder_U', weights_only = True))
             autoencoder_U.eval()
-            policy.load_state_dict(torch.load(path + 'policy'))
+            policy.load_state_dict(torch.load(path + 'policy', weights_only = True))
             policy.eval()
         
         autoencoder_Y.freeze()
@@ -262,13 +262,13 @@ class OCP():
                 phi.He()
             train_latent_loop(encoder_Y, decoder_Y, encoder_U, decoder_U, policy, phi, Y, Y0, Y1, U, MU, self.ntrain, *args, **kwargs)
         else:
-            autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y'))
+            autoencoder_Y.load_state_dict(torch.load(path + 'autoencoder_Y', weights_only = True))
             autoencoder_Y.eval()
-            autoencoder_U.load_state_dict(torch.load(path + 'autoencoder_U'))
+            autoencoder_U.load_state_dict(torch.load(path + 'autoencoder_U', weights_only = True))
             autoencoder_U.eval()
-            policy.load_state_dict(torch.load(path + 'policy'))
+            policy.load_state_dict(torch.load(path + 'policy', weights_only = True))
             policy.eval()
-            phi.load_state_dict(torch.load(path + 'phi'))
+            phi.load_state_dict(torch.load(path + 'phi', weights_only = True))
             phi.eval()
         
         autoencoder_Y.freeze()
