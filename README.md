@@ -121,7 +121,7 @@ The DLROMs library consists of several modules, which we may synthesize as follo
   
 * **dlroms.minns**</br> *Hybrid module bridging neural networks and finite element spaces*. Implements advanced neural network architectures for mesh-based functional data (e.g., data coming from Finite Element simulations). These include: (i) trainable architectures, such as [Mesh-Informed Neural Networks (MINNs)](https://doi.org/10.1007/s10915-023-02331-1), (ii) nonlearnable blocks, for computing, e.g., integral norms, geodesic distances and more.
 
-* * **dlroms.ocp**</br> *Construction of data-driven ROMs for Optimal Control Problems (OCPs)*. Includes basic reduce order modeling strategies, such as POD and autoencoders, to compress high-dimensional state and control variables. It can be used to implement deep learning-based [open-loop](https://doi.org/10.48550/arXiv.2409.05709) and closed-loop controllers.
+* **dlroms.ocp**</br> *Construction of data-driven ROMs for Optimal Control Problems (OCPs)*. Includes basic reduce order modeling strategies, such as POD and autoencoders, to compress high-dimensional state and control variables. It can be used to implement deep learning-based [open-loop](https://doi.org/10.48550/arXiv.2409.05709) and closed-loop controllers.
 
 ### Auxiliary modules
 * **dlroms.cores**</br> Pytorch based library for handling, generating, and loading CPU/GPU tensors.
