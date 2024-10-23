@@ -8,6 +8,8 @@
      
 - [Mesh-Informed Neural Networks for Operator Learning in Finite Element Spaces](https://doi.org/10.1007/s10915-023-02331-1), Franco et al., *Journal of Scientific Computing*, 97(2), 35 (2023).
 
+- [Real-time optimal control of high-dimensional parametrized systems by deep learning-based reduced order models](https://doi.org/10.48550/arXiv.2409.05709), Tomasetto et al., arXiv:2409.05709 (2024).
+
 This library is a fork of the [dlroms](https://github.com/NicolaRFranco/dlroms.git) library, that is written and currently maintained by [Nicola Rares Franco](https://github.com/NicolaRFranco), Ph.D., MOX, Politecnico di Milano. For a tensorflow alternative, we recommend the repositories by [Stefania Fresca, Ph.D](https://github.com/stefaniafresca).
 
 
@@ -119,7 +121,7 @@ The DLROMs library consists of several modules, which we may synthesize as follo
   
 * **dlroms.minns**</br> *Hybrid module bridging neural networks and finite element spaces*. Implements advanced neural network architectures for mesh-based functional data (e.g., data coming from Finite Element simulations). These include: (i) trainable architectures, such as [Mesh-Informed Neural Networks (MINNs)](https://doi.org/10.1007/s10915-023-02331-1), (ii) nonlearnable blocks, for computing, e.g., integral norms, geodesic distances and more.
 
-* * **dlroms.ocp**</br> *Construction of data-driven ROMs for Optimal Control Problems (OCPs)*. Includes basic reduce order modeling strategies, such as POD and autoencoders, to compress optimal state and control variables. It can be used to implement deep learning-based reduced order [open-loop](https://doi.org/10.48550/arXiv.2409.05709) and closed-loop controllers.
+* * **dlroms.ocp**</br> *Construction of data-driven ROMs for Optimal Control Problems (OCPs)*. Includes basic reduce order modeling strategies, such as POD and autoencoders, to compress high-dimensional state and control variables. It can be used to implement deep learning-based [open-loop](https://doi.org/10.48550/arXiv.2409.05709) and closed-loop controllers.
 
 ### Auxiliary modules
 * **dlroms.cores**</br> Pytorch based library for handling, generating, and loading CPU/GPU tensors.
